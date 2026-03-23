@@ -14,6 +14,10 @@ from datetime import datetime, timezone
 from google.cloud.firestore_v1 import Increment
 import requests
 
+def _is_authenticated(user):
+    """Returns True when FirebaseAuthentication set request.user to a UID string."""
+    return isinstance(user, str) and bool(user)
+
 class ChallengeListCreateView(APIView):
     def get(self, request):
         """Returns all public challenges."""
@@ -41,7 +45,7 @@ class ChallengeListCreateView(APIView):
 
     def post(self, request):
         """Creates a new challenge from a Spotify playlist URL."""
-        if not request.user:
+        if not _is_authenticated(request.user):
             return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
             
         serializer = CreateChallengeSerializer(data=request.data)
@@ -97,7 +101,7 @@ class ChallengeDetailView(APIView):
             # Enforce privacy
             privacy = data.get('privacy', 'public')
             if privacy != 'public':
-                if not request.user:
+                if not _is_authenticated(request.user):
                     return Response({'error': 'Authentication required for private challenge'}, status=status.HTTP_401_UNAUTHORIZED)
                 
                 is_creator = data.get('creator_uid') == request.user
@@ -112,7 +116,7 @@ class ChallengeDetailView(APIView):
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
     def delete(self, request, pk):
-        if not request.user:
+        if not _is_authenticated(request.user):
             return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
             
         try:
@@ -133,7 +137,7 @@ class ChallengeDetailView(APIView):
 
 class SpotifyPlaylistView(APIView):
     def post(self, request):
-        if not request.user:
+        if not _is_authenticated(request.user):
             return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
             
         serializer = PlaylistPreviewSerializer(data=request.data)
@@ -153,7 +157,7 @@ class SpotifyPlaylistView(APIView):
 
 class SpotifyPreviewView(APIView):
     def get(self, request, track_id):
-        if not request.user:
+        if not _is_authenticated(request.user):
             return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
             
         try:
@@ -176,7 +180,7 @@ class SpotifyPreviewView(APIView):
 
 class ScoreSubmitView(APIView):
     def post(self, request):
-        if not request.user:
+        if not _is_authenticated(request.user):
             return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
             
         serializer = ScoreSubmitSerializer(data=request.data)
