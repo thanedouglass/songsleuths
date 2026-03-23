@@ -36,7 +36,7 @@ class TestChallengeList:
     def test_create_challenge_requires_auth(self):
         client = Client()
         response = client.post('/api/challenges/',
-            data=json.dumps({'playlist_url': 'https://open.spotify.com/playlist/2eeyZrY5v7lfoUZwLtAVQ9?si=goVqJG-2T1GNd-N_WYJ3GQ&pi=d6D-A5IDTuCL5', 'title': 'Test', 'privacy': 'public'}),
+            data=json.dumps({'playlist_url': 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M', 'title': 'Test', 'privacy': 'public'}),
             content_type='application/json'
         )
         assert response.status_code == 401
