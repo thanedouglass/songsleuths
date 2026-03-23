@@ -1,0 +1,124 @@
+# ─── Python / Django ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+.Python
+env/
+venv/
+ENV/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Django specifics
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+static_root/
+
+# Django migrations (keep these — they are part of source control)
+# !*/migrations/*.py
+
+# ─── Node / React ─────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.npm/
+
+# Build output
+dist/
+build/
+.next/
+out/
+
+# Vite
+*.local
+.vite/
+
+# ─── Environment variables ────────────────────────────────────────────────────
+# CRITICAL: never commit secrets
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+.env.staging
+
+# ─── Firebase ─────────────────────────────────────────────────────────────────
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.firebaserc
+# Keep firebase.json (project config, no secrets)
+# !firebase.json
+
+# Firebase service account keys — never commit these
+*-service-account*.json
+serviceAccountKey.json
+*serviceAccount*.json
+
+# ─── Spotify / API credentials ────────────────────────────────────────────────
+spotify_credentials.json
+client_secrets.json
+*_credentials.json
+
+# ─── IDEs & editors ───────────────────────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Testing & coverage ───────────────────────────────────────────────────────
+coverage/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+*.cover
+nosetests.xml
+coverage.xml
+*.lcov
+lcov.info
+
+# ─── Misc ─────────────────────────────────────────────────────────────────────
+*.pem
+*.key
+*.cert
+*.p12
+.cache/
+.parcel-cache/
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
