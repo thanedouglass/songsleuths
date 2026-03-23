@@ -43,7 +43,11 @@ SongSleuths is a full-stack web application for the Howard University CSCI 375 S
 - **Frontend:** `cd frontend && npm test` (to be configured)
 
 ## Team Members
-- [Add team members here]
+- Thane Douglass
+- Miles James
+- Paris Alston
+- Adele Mugadza
+- Langyia Philemon
 
 ## Course Info
 - **Course:** CSCI 375 Software Engineering
