@@ -4,7 +4,6 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 import os
 
-# Initialize Firebase Admin SDK once
 _cred_path = os.getenv('FIREBASE_SERVICE_ACCOUNT_PATH')
 if _cred_path and not firebase_admin._apps:
     try:
@@ -15,16 +14,22 @@ if _cred_path and not firebase_admin._apps:
 
 class FirebaseAuthentication(BaseAuthentication):
     """
-    Verifies the Firebase ID token passed in the Authorization: Bearer <token> header.
-    Returns (uid_string, None) on success or raises AuthenticationFailed.
+    Reads Authorization: Bearer <firebase_id_token>
+    Returns (uid_string, None) on success.
+    Returns None (anonymous) if no header present.
+    Raises AuthenticationFailed if token is present but invalid.
     """
     def authenticate(self, request):
         auth_header = request.headers.get('Authorization', '')
         if not auth_header.startswith('Bearer '):
             return None
-        id_token = auth_header.split('Bearer ')[1]
+        id_token = auth_header.split('Bearer ', 1)[1].strip()
         try:
             decoded = firebase_auth.verify_id_token(id_token)
             return (decoded['uid'], None)
-        except Exception:
-            raise AuthenticationFailed('Invalid or expired Firebase token.')
+        except firebase_auth.ExpiredIdTokenError:
+            raise AuthenticationFailed('Firebase token has expired.')
+        except firebase_auth.InvalidIdTokenError:
+            raise AuthenticationFailed('Firebase token is invalid.')
+        except Exception as e:
+            raise AuthenticationFailed(f'Firebase authentication failed: {str(e)}')
