@@ -256,11 +256,12 @@ export const GameplayPage: React.FC = () => {
     return (
       <span
         key={idx}
+        className="tile"
         style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 44, height: 44, borderRadius: 4,
+          borderRadius: 4,
           background: bg, border,
-          ...mono, fontWeight: 'bold', fontSize: 22, color,
+          ...mono, fontWeight: 'bold', color,
           margin: '2px',
           animation: isRecent ? `flipTile 0.4s ease-in-out ${delay}ms both` : undefined,
           transition: 'background 0.2s',
@@ -280,15 +281,17 @@ export const GameplayPage: React.FC = () => {
         key={letter}
         onClick={() => handleGuess(letter)}
         disabled={disabled}
+        className="key"
         style={{
-          width: 36, height: 48, borderRadius: 4,
+          borderRadius: 4,
           background: isCorrect ? '#1DB954' : isWrong ? '#535353' : '#282828',
           color: isWrong ? '#B3B3B3' : '#FFFFFF',
           border: 'none', cursor: disabled ? 'default' : 'pointer',
-          ...mono, fontWeight: 'bold', fontSize: 13,
+          ...mono, fontWeight: 'bold',
           transition: 'background 0.15s',
           margin: '2px',
           opacity: disabled && !isCorrect && !isWrong ? 0.6 : 1,
+          minHeight: 44, minWidth: 32,
         }}
       >
         {letter}

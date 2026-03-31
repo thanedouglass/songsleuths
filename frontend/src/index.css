@@ -3,5 +3,49 @@
 @tailwind utilities;
 
 body {
-  @apply bg-black-deep text-white font-serif m-0 p-0;
+  background: #121212;
+  color: #FFFFFF;
+  font-family: Georgia, serif;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Responsive tile sizing for gameplay board */
+.tile {
+  width: 44px;
+  height: 44px;
+  font-size: 20px;
+}
+
+@media (min-width: 480px) {
+  .tile {
+    width: 52px;
+    height: 52px;
+    font-size: 26px;
+  }
+}
+
+/* Keyboard key sizing */
+.key {
+  width: 32px;
+  height: 44px;
+  font-size: 12px;
+}
+
+@media (min-width: 480px) {
+  .key {
+    width: 36px;
+    height: 48px;
+    font-size: 13px;
+  }
+}
+
+/* Ensure images/media don't overflow */
+img, video, iframe {
+  max-width: 100%;
 }
