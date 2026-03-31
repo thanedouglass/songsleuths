@@ -1,13 +1,17 @@
 import firebase_admin
-from firebase_admin import firestore
+from firebase_admin import credentials, firestore
 import os
-import api.firebase_auth  # Import to ensure Firebase Admin is initialized
-
-# Firebase Admin is already initialized in firebase_auth.py
-# This module just exposes the Firestore client.
 
 def get_db():
-    """Returns the Firestore client. Safe to call multiple times."""
+    """Initializes Firebase Admin (if not already done) and returns the Firestore client."""
+    if not firebase_admin._apps:
+        cred_path = os.getenv('FIREBASE_SERVICE_ACCOUNT_PATH')
+        if cred_path:
+            cred = credentials.Certificate(cred_path)
+            firebase_admin.initialize_app(cred)
+        else:
+            # Fall back to Application Default Credentials (for Cloud Run / GCP environments)
+            firebase_admin.initialize_app()
     return firestore.client()
 
 db = get_db()

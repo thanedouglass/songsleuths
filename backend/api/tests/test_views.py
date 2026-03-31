@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, Mock
 from django.test import Client
 import json
 
@@ -14,9 +14,14 @@ def make_authed_client():
 
 @pytest.fixture(autouse=True)
 def mock_firebase_verify(monkeypatch):
-    with patch('api.firebase_auth.firebase_auth.verify_id_token') as mock:
-        mock.return_value = {'uid': MOCK_UID}
-        yield mock
+    """
+    The current firebase_auth.py uses the Google Identity Toolkit REST API.
+    We mock requests.post inside that module so it returns a fake user.
+    """
+    fake_response = Mock()
+    fake_response.json.return_value = {'users': [{'localId': MOCK_UID}]}
+    with patch('api.firebase_auth.requests.post', return_value=fake_response):
+        yield fake_response
 
 @pytest.fixture(autouse=True)
 def mock_firestore(monkeypatch):
@@ -43,20 +48,19 @@ class TestChallengeList:
 
     def test_create_challenge_authenticated(self):
         client = make_authed_client()
-        with patch('api.views.spotify_service.get_playlist_tracks') as mock_tracks, \
+        with patch('api.views.spotify_new.get_playlist_tracks') as mock_tracks, \
              patch('api.views.db') as mock_db:
             mock_tracks.return_value = [
-                {'spotify_id': 'abc', 'title': 'Love Story', 'artist': 'Taylor Swift',
-                 'album': 'Fearless', 'preview_url': None, 'album_art': None}
+                {'id': 'abc', 'title': 'Love Story', 'artist': 'Taylor Swift', 'preview_url': None}
             ]
             mock_doc = MagicMock()
             mock_doc.id = 'new-challenge-id'
             mock_db.collection.return_value.add.return_value = (None, mock_doc)
             response = client.post('/api/challenges/',
                 data=json.dumps({
-                    'playlist_url': 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M',
+                    'playlistUrl': 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M',
                     'title': 'My Test Challenge',
-                    'privacy': 'public'
+                    'visibility': 'public'
                 }),
                 content_type='application/json'
             )

@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 ROOT_DIR = BASE_DIR.parent
 
-# Load environment variables from root .env
-load_dotenv(ROOT_DIR / '.env')
+# Load .env from the backend directory (where manage.py lives)
+load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'unsafe-default-key-for-dev')
 

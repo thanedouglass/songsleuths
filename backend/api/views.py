@@ -1,153 +1,377 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
 from .firestore_client import db
-from . import spotify_service
+from . import spotify_service        # kept for existing preview/score endpoints
+from . import spotify as spotify_new  # new module for M2 challenge endpoints
 from . import scoring
-from .serializers import (
-    CreateChallengeSerializer, 
-    PlaylistPreviewSerializer, 
-    ScoreSubmitSerializer
-)
+from .serializers import PlaylistPreviewSerializer, ScoreSubmitSerializer
 from datetime import datetime, timezone
 from google.cloud.firestore_v1 import Increment
 import requests
+import re
+
 
 class HealthCheckView(APIView):
     def get(self, request):
         return Response({"status": "ok"})
 
+
 def _is_authenticated(user):
-    """Returns True when FirebaseAuthentication set request.user to a UID string."""
+    """Returns True when FirebaseAuthenticated set request.user to a UID string."""
     return isinstance(user, str) and bool(user)
+
+
+def _parse_playlist_id(url: str) -> str | None:
+    """
+    Extracts the Spotify playlist ID from a URL or URI.
+    Accepts:
+      https://open.spotify.com/playlist/{id}?si=...
+      spotify:playlist:{id}
+    Returns None if unrecognisable.
+    """
+    # URL format
+    match = re.search(r'open\.spotify\.com/playlist/([A-Za-z0-9]+)', url)
+    if match:
+        return match.group(1)
+    # URI format
+    match = re.match(r'^spotify:playlist:([A-Za-z0-9]+)$', url.strip())
+    if match:
+        return match.group(1)
+    return None
+
+
+def _ts_to_iso(value) -> str | None:
+    """Convert a Firestore DatetimeWithNanoseconds or plain datetime to ISO string."""
+    if value is None:
+        return None
+    if hasattr(value, 'isoformat'):
+        return value.isoformat()
+    return str(value)
+
+
+def _build_puzzle_tokens(title: str) -> list:
+    """Converts a song title into puzzle tokens (no actual letters for hidden chars)."""
+    tokens = []
+    for i, char in enumerate(title):
+        if char == ' ':
+            tokens.append({'type': 'space', 'char': ' '})
+        elif char.isalpha():
+            tokens.append({'type': 'letter', 'char': '_', 'position': i})
+        else:
+            tokens.append({'type': 'punctuation', 'char': char})
+    return tokens
+
+
+def _calc_expected_score(song_results: list) -> int:
+    total = 0
+    for r in song_results:
+        if r.get('status') == 'revealed':
+            total += 0
+        else:
+            total += max(0, 100 - 20 * int(r.get('incorrectCount', 0))
+                                  - 25 * int(r.get('hintsUsed', 0)))
+    return total
+
+
+def _get_song(pk: str, song_index: int):
+    """Returns (challenge_dict, song_dict) or raises ValueError."""
+    doc = db.collection('challenges').document(pk).get()
+    if not doc.exists:
+        raise ValueError('Challenge not found')
+    d = doc.to_dict()
+    songs = d.get('songs', [])
+    if song_index < 0 or song_index >= len(songs):
+        raise ValueError('Song not found')
+    return d, songs[song_index]
+
+
+# ─── M3 Gameplay endpoints ───────────────────────────────────────────────────
+
+class SongPuzzleView(APIView):
+    def get(self, request, pk, song_index):
+        try:
+            challenge, song = _get_song(pk, song_index)
+            title = song.get('title', '')
+            doc = db.collection('challenges').document(pk).get()
+            song_count = len(challenge.get('songs', []))
+            return Response({
+                'songId': song.get('id'),
+                'puzzleTokens': _build_puzzle_tokens(title),
+                'artist': song.get('artist', ''),
+                'previewUrl': song.get('previewUrl'),
+                'songCount': song_count,
+            })
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SongGuessView(APIView):
+    def post(self, request, pk, song_index):
+        letter = (request.data.get('letter') or '').strip().upper()
+        if not letter or len(letter) != 1 or not letter.isalpha():
+            return Response({'error': 'Invalid letter'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            _, song = _get_song(pk, song_index)
+            title = song.get('title', '')
+            positions = [i for i, c in enumerate(title) if c.upper() == letter and c.isalpha()]
+            return Response({'correct': bool(positions), 'positions': positions})
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SongAnswerView(APIView):
+    def get(self, request, pk, song_index):
+        try:
+            _, song = _get_song(pk, song_index)
+            return Response({'title': song.get('title', '')})
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ChallengeScoreView(APIView):
+    def post(self, request, pk):
+        if not _is_authenticated(request.user):
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        total_score = request.data.get('totalScore')
+        completion_time_ms = request.data.get('completionTimeMs')
+        song_results = request.data.get('songResults', [])
+
+        if total_score is None or completion_time_ms is None:
+            return Response({'error': 'Missing required fields'}, status=status.HTTP_400_BAD_REQUEST)
+
+        expected = _calc_expected_score(song_results)
+        if expected != int(total_score):
+            return Response(
+                {'error': f'Score mismatch: expected {expected}, got {total_score}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            doc_ref = db.collection('challenges').document(pk)
+            _, score_ref = db.collection('scores').add({
+                'challengeId': pk,
+                'userId': request.user,
+                'totalScore': int(total_score),
+                'completionTimeMs': int(completion_time_ms),
+                'songResults': song_results,
+                'completedAt': datetime.now(timezone.utc),
+            })
+            doc_ref.update({'playCount': Increment(1)})
+            return Response({'scoreId': score_ref.id}, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ─── Challenge endpoints (M2) ────────────────────────────────────────────────
 
 class ChallengeListCreateView(APIView):
     def get(self, request):
-        """Returns all public challenges."""
+        """
+        ?creator=me  → returns the authenticated user's challenges (auth required).
+        no param     → returns public challenges sorted by createdAt desc, limit 20.
+        """
+        if request.query_params.get('creator') == 'me':
+            if not _is_authenticated(request.user):
+                return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+            try:
+                docs = (
+                    db.collection('challenges')
+                    .where('creatorUid', '==', request.user)
+                    .order_by('createdAt', direction='DESCENDING')
+                    .stream()
+                )
+                results = []
+                for doc in docs:
+                    d = doc.to_dict()
+                    results.append({
+                        'id': doc.id,
+                        'title': d.get('title', ''),
+                        'songCount': len(d.get('songs', [])),
+                        'createdAt': _ts_to_iso(d.get('createdAt')),
+                        'playCount': d.get('playCount', 0),
+                        'visibility': d.get('visibility', 'public'),
+                    })
+                return Response(results)
+            except Exception as e:
+                return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            # Public feed — no auth required
+            try:
+                docs = (
+                    db.collection('challenges')
+                    .where('visibility', '==', 'public')
+                    .order_by('createdAt', direction='DESCENDING')
+                    .limit(20)
+                    .stream()
+                )
+                results = []
+                for doc in docs:
+                    d = doc.to_dict()
+                    results.append({
+                        'id': doc.id,
+                        'title': d.get('title', ''),
+                        'songCount': len(d.get('songs', [])),
+                        'createdAt': _ts_to_iso(d.get('createdAt')),
+                        'playCount': d.get('playCount', 0),
+                    })
+                return Response(results)
+            except Exception as e:
+                return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def post(self, request):
+        """Creates a new challenge from a Spotify playlist URL. Auth required."""
+        if not _is_authenticated(request.user):
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        body = request.data
+
+        # Validate required fields
+        playlist_url = (body.get('playlistUrl') or '').strip()
+        title = (body.get('title') or '').strip()
+        description = (body.get('description') or '').strip()
+        visibility = (body.get('visibility') or 'public').strip()
+
+        if not title:
+            return Response({'error': 'Title is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(title) > 100:
+            return Response({'error': 'Title must be 100 characters or fewer'}, status=status.HTTP_400_BAD_REQUEST)
+
+        playlist_id = _parse_playlist_id(playlist_url)
+        if not playlist_id:
+            return Response({'error': 'Invalid playlist URL'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            challenges_ref = db.collection('challenges')
-            query = challenges_ref.where('privacy', '==', 'public').order_by('created_at', direction='DESCENDING').limit(50)
+            raw_tracks = spotify_new.get_playlist_tracks(playlist_id)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'error': f'Spotify error: {str(e)}'}, status=status.HTTP_502_BAD_GATEWAY)
+
+        songs = [
+            {
+                'id': t['id'],
+                'title': t['title'],
+                'artist': t['artist'],
+                'previewUrl': t.get('preview_url'),
+            }
+            for t in raw_tracks
+        ]
+
+        challenge_doc = {
+            'creatorUid': request.user,
+            'title': title,
+            'description': description,
+            'playlistUrl': playlist_url,
+            'songs': songs,
+            'visibility': visibility if visibility in ('public', 'private', 'restricted') else 'public',
+            'allowedUsers': [],
+            'createdAt': datetime.now(timezone.utc),
+            'playCount': 0,
+        }
+
+        try:
+            _, doc_ref = db.collection('challenges').add(challenge_doc)
+            return Response(
+                {'challengeId': doc_ref.id, 'title': title, 'songCount': len(songs)},
+                status=status.HTTP_201_CREATED,
+            )
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ChallengeDetailView(APIView):
+    def get(self, request, pk):
+        try:
+            doc = db.collection('challenges').document(pk).get()
+            if not doc.exists:
+                return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
+
+            d = doc.to_dict()
+            visibility = d.get('visibility', 'public')
+
+            if visibility == 'restricted':
+                if not _is_authenticated(request.user):
+                    return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+                if request.user != d.get('creatorUid') and request.user not in d.get('allowedUsers', []):
+                    return Response({'error': 'Not authorised'}, status=status.HTTP_403_FORBIDDEN)
+
+            return Response({
+                'id': doc.id,
+                'title': d.get('title', ''),
+                'description': d.get('description', ''),
+                'songCount': len(d.get('songs', [])),
+                'songs': d.get('songs', []),
+                'creatorUid': d.get('creatorUid', ''),
+                'createdAt': _ts_to_iso(d.get('createdAt')),
+                'playCount': d.get('playCount', 0),
+                'visibility': visibility,
+                'playlistUrl': d.get('playlistUrl', ''),
+            })
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def delete(self, request, pk):
+        if not _is_authenticated(request.user):
+            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            doc_ref = db.collection('challenges').document(pk)
+            doc = doc_ref.get()
+            if not doc.exists:
+                return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
+            if doc.to_dict().get('creatorUid') != request.user:
+                return Response({'error': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+            doc_ref.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ExploreView(APIView):
+    def get(self, request):
+        try:
+            docs = (
+                db.collection('challenges')
+                .where('visibility', '==', 'public')
+                .order_by('playCount', direction='DESCENDING')
+                .order_by('createdAt', direction='DESCENDING')
+                .limit(20)
+                .stream()
+            )
             results = []
-            for doc in query.stream():
-                data = doc.to_dict()
-                data['id'] = doc.id
-                # Only return the high level metadata, not the full tracks
+            for doc in docs:
+                d = doc.to_dict()
                 results.append({
                     'id': doc.id,
-                    'title': data.get('title'),
-                    'description': data.get('description'),
-                    'creator_uid': data.get('creator_uid'),
-                    'song_count': len(data.get('tracks', [])),
-                    'play_count': data.get('play_count', 0),
-                    'created_at': data.get('created_at'),
-                    'privacy': data.get('privacy')
+                    'title': d.get('title', ''),
+                    'songCount': len(d.get('songs', [])),
+                    'createdAt': _ts_to_iso(d.get('createdAt')),
+                    'playCount': d.get('playCount', 0),
                 })
             return Response(results)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def post(self, request):
-        """Creates a new challenge from a Spotify playlist URL."""
-        if not _is_authenticated(request.user):
-            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
-            
-        serializer = CreateChallengeSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-        data = serializer.validated_data
-        
-        try:
-            playlist_id = spotify_service.extract_playlist_id(data['playlist_url'])
-            tracks = spotify_service.get_playlist_tracks(playlist_id)
-            
-            if not tracks:
-                return Response({'error': 'Playlist is empty'}, status=status.HTTP_400_BAD_REQUEST)
-                
-            challenge_data = {
-                'title': data['title'],
-                'description': data.get('description', ''),
-                'privacy': data['privacy'],
-                'creator_uid': request.user,
-                'tracks': tracks,
-                'play_count': 0,
-                'created_at': datetime.now(timezone.utc).isoformat(),
-            }
-            
-            if data['privacy'] == 'restricted':
-                challenge_data['allowed_uids'] = data.get('allowed_uids', [])
-                
-            _, doc_ref = db.collection('challenges').add(challenge_data)
-            
-            challenge_data['id'] = doc_ref.id
-            return Response(challenge_data, status=status.HTTP_201_CREATED)
-            
-        except ValueError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        except requests.HTTPError as e:
-            return Response({'error': f"Spotify API error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class ChallengeDetailView(APIView):
-    def get(self, request, pk):
-        try:
-            doc_ref = db.collection('challenges').document(pk)
-            doc = doc_ref.get()
-            
-            if not doc.exists:
-                return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
-                
-            data = doc.to_dict()
-            data['id'] = doc.id
-            
-            # Enforce privacy
-            privacy = data.get('privacy', 'public')
-            if privacy != 'public':
-                if not _is_authenticated(request.user):
-                    return Response({'error': 'Authentication required for private challenge'}, status=status.HTTP_401_UNAUTHORIZED)
-                
-                is_creator = data.get('creator_uid') == request.user
-                is_allowed = privacy == 'restricted' and request.user in data.get('allowed_uids', [])
-                
-                if not (is_creator or is_allowed):
-                    return Response({'error': 'Not authorized to view this challenge'}, status=status.HTTP_403_FORBIDDEN)
-                    
-            return Response(data)
-            
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            
-    def delete(self, request, pk):
-        if not _is_authenticated(request.user):
-            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
-            
-        try:
-            doc_ref = db.collection('challenges').document(pk)
-            doc = doc_ref.get()
-            
-            if not doc.exists:
-                return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
-                
-            if doc.to_dict().get('creator_uid') != request.user:
-                return Response({'error': 'Not authorized to delete this challenge'}, status=status.HTTP_403_FORBIDDEN)
-                
-            doc_ref.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-            
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+# ─── Existing endpoints (M1 — unchanged logic) ───────────────────────────────
 
 class SpotifyPlaylistView(APIView):
     def post(self, request):
         if not _is_authenticated(request.user):
             return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
-            
+
         serializer = PlaylistPreviewSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
+
         try:
             playlist_id = spotify_service.extract_playlist_id(serializer.validated_data['playlist_url'])
             tracks = spotify_service.get_playlist_tracks(playlist_id)
@@ -155,119 +379,105 @@ class SpotifyPlaylistView(APIView):
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except requests.HTTPError as e:
-            return Response({'error': f"Spotify API error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'Spotify API error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class SpotifyPreviewView(APIView):
     def get(self, request, track_id):
         if not _is_authenticated(request.user):
             return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
-            
+
         try:
             token = spotify_service.get_access_token()
             headers = {'Authorization': f'Bearer {token}'}
-            url = f"{spotify_service.SPOTIFY_API_BASE}/tracks/{track_id}"
-            
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            
-            track_data = response.json()
-            return Response({'preview_url': track_data.get('preview_url')})
-            
+            url = f'{spotify_service.SPOTIFY_API_BASE}/tracks/{track_id}'
+            resp = requests.get(url, headers=headers)
+            resp.raise_for_status()
+            return Response({'preview_url': resp.json().get('preview_url')})
         except requests.HTTPError as e:
             if e.response.status_code == 404:
                 return Response({'error': 'Track not found'}, status=status.HTTP_404_NOT_FOUND)
-            return Response({'error': f"Spotify API error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'Spotify API error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class ScoreSubmitView(APIView):
     def post(self, request):
         if not _is_authenticated(request.user):
             return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
-            
+
         serializer = ScoreSubmitSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
+
         data = serializer.validated_data
-        
+
         try:
-            # Check if challenge exists and user has access
             challenge_ref = db.collection('challenges').document(data['challenge_id'])
             challenge = challenge_ref.get()
-            
             if not challenge.exists:
                 return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
-                
+
             c_data = challenge.to_dict()
             if c_data.get('privacy') != 'public':
                 is_creator = c_data.get('creator_uid') == request.user
                 is_allowed = c_data.get('privacy') == 'restricted' and request.user in c_data.get('allowed_uids', [])
                 if not (is_creator or is_allowed):
                     return Response({'error': 'Not authorized'}, status=status.HTTP_403_FORBIDDEN)
-            
-            # Calculate total score
-            puzzle_scores = []
-            for p in data['puzzle_results']:
-                score = scoring.calculate_puzzle_score(
+
+            puzzle_scores = [
+                scoring.calculate_puzzle_score(
                     solved=p['solved'],
                     revealed=p['revealed'],
                     incorrect_count=p['incorrect_count'],
-                    hints_used=p['hints_used']
+                    hints_used=p['hints_used'],
                 )
-                puzzle_scores.append(score)
-                
+                for p in data['puzzle_results']
+            ]
             total_score = scoring.calculate_challenge_score(puzzle_scores)
-            
-            # Save score
+
             score_data = {
                 'challenge_id': data['challenge_id'],
                 'user_uid': request.user,
                 'total_score': total_score,
                 'puzzle_results': data['puzzle_results'],
                 'completion_time_seconds': data['completion_time_seconds'],
-                'created_at': datetime.now(timezone.utc).isoformat()
+                'created_at': datetime.now(timezone.utc).isoformat(),
             }
-            
             _, score_ref = db.collection('scores').add(score_data)
-            
-            # Increment play count
             challenge_ref.update({'play_count': Increment(1)})
-            
-            return Response({
-                'total_score': total_score,
-                'score_id': score_ref.id
-            }, status=status.HTTP_200_OK)
-            
+
+            return Response({'total_score': total_score, 'score_id': score_ref.id}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class LeaderboardView(APIView):
     def get(self, request, challenge_id):
         try:
-            # Query scores for this challenge
-            scores_ref = db.collection('scores')
-            query = scores_ref.where('challenge_id', '==', challenge_id) \
-                            .order_by('total_score', direction='DESCENDING') \
-                            .order_by('completion_time_seconds', direction='ASCENDING') \
-                            .limit(50)
-                            
+            docs = (
+                db.collection('scores')
+                .where('challenge_id', '==', challenge_id)
+                .order_by('total_score', direction='DESCENDING')
+                .order_by('completion_time_seconds', direction='ASCENDING')
+                .limit(50)
+                .stream()
+            )
             results = []
             rank = 1
-            for doc in query.stream():
-                data = doc.to_dict()
+            for doc in docs:
+                d = doc.to_dict()
                 results.append({
                     'rank': rank,
-                    'user_uid': data.get('user_uid'),
-                    'total_score': data.get('total_score'),
-                    'completion_time_seconds': data.get('completion_time_seconds'),
-                    'created_at': data.get('created_at')
+                    'user_uid': d.get('user_uid'),
+                    'total_score': d.get('total_score'),
+                    'completion_time_seconds': d.get('completion_time_seconds'),
+                    'created_at': d.get('created_at'),
                 })
                 rank += 1
-                
             return Response(results)
-            
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
