@@ -14,6 +14,10 @@ from datetime import datetime, timezone
 from google.cloud.firestore_v1 import Increment
 import requests
 
+class HealthCheckView(APIView):
+    def get(self, request):
+        return Response({"status": "ok"})
+
 def _is_authenticated(user):
     """Returns True when FirebaseAuthentication set request.user to a UID string."""
     return isinstance(user, str) and bool(user)

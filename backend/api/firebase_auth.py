@@ -1,35 +1,40 @@
-import firebase_admin
-from firebase_admin import credentials, auth as firebase_auth
+import os
+import requests
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
-import os
 
-_cred_path = os.getenv('FIREBASE_SERVICE_ACCOUNT_PATH')
-if _cred_path and not firebase_admin._apps:
-    try:
-        cred = credentials.Certificate(_cred_path)
-        firebase_admin.initialize_app(cred)
-    except Exception as e:
-        print(f"Warning: Could not initialize Firebase Admin SDK: {e}")
-
-class FirebaseAuthentication(BaseAuthentication):
+class FirebaseAuthenticated(BaseAuthentication):
     """
     Reads Authorization: Bearer <firebase_id_token>
-    Returns (uid_string, None) on success.
-    Returns None (anonymous) if no header present.
-    Raises AuthenticationFailed if token is present but invalid.
+    Verifies it using Google Identity Toolkit API.
+    Returns (user_data, None) on success.
+    Raises AuthenticationFailed if invalid.
     """
     def authenticate(self, request):
         auth_header = request.headers.get('Authorization', '')
         if not auth_header.startswith('Bearer '):
             return None
+            
         id_token = auth_header.split('Bearer ', 1)[1].strip()
+        project_id = os.getenv('FIREBASE_PROJECT_ID')
+        api_key = os.getenv('FIREBASE_API_KEY') # Usually needed for this endpoint but we will use the generic approach if not provided
+        
+        # Google Identity Toolkit API
+        url = f"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key={api_key}"
+        
+        payload = {"idToken": id_token}
         try:
-            decoded = firebase_auth.verify_id_token(id_token)
-            return (decoded['uid'], None)
-        except firebase_auth.ExpiredIdTokenError:
-            raise AuthenticationFailed('Firebase token has expired.')
-        except firebase_auth.InvalidIdTokenError:
-            raise AuthenticationFailed('Firebase token is invalid.')
-        except Exception as e:
-            raise AuthenticationFailed(f'Firebase authentication failed: {str(e)}')
+            response = requests.post(url, json=payload)
+            data = response.json()
+            if 'error' in data:
+                raise AuthenticationFailed(f"Firebase auth failed: {data['error'].get('message')}")
+                
+            users = data.get('users', [])
+            if not users:
+                raise AuthenticationFailed("No user found for this token.")
+                
+            user = users[0]
+            # Returning uid and email (or just dictionary)
+            return (user.get('localId'), None)
+        except requests.RequestException as e:
+            raise AuthenticationFailed(f"Error contacting Firebase: {str(e)}")
