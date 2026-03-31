@@ -165,9 +165,90 @@ class ChallengeScoreView(APIView):
                 'completedAt': datetime.now(timezone.utc),
             })
             doc_ref.update({'playCount': Increment(1)})
-            return Response({'scoreId': score_ref.id}, status=status.HTTP_201_CREATED)
+
+            # Calculate rank after write
+            all_scores = (
+                db.collection('scores')
+                .where('challengeId', '==', pk)
+                .order_by('totalScore', direction='DESCENDING')
+                .order_by('completionTimeMs', direction='ASCENDING')
+                .stream()
+            )
+            rank = 1
+            for s in all_scores:
+                if s.id == score_ref.id:
+                    break
+                rank += 1
+
+            return Response({'scoreId': score_ref.id, 'rank': rank}, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SongPreviewProxyView(APIView):
+    """
+    Proxies the Spotify audio preview so the raw CDN URL is never exposed
+    in the browser network tab.
+    """
+    def get(self, request, pk, song_index):
+        from django.http import StreamingHttpResponse, HttpResponse
+        try:
+            _, song = _get_song(pk, song_index)
+            preview_url = song.get('previewUrl')
+            if not preview_url:
+                return Response({'available': False}, status=status.HTTP_404_NOT_FOUND)
+
+            # Fetch audio from Spotify CDN server-side
+            audio_resp = requests.get(preview_url, stream=True, timeout=15)
+            audio_resp.raise_for_status()
+
+            def audio_stream():
+                for chunk in audio_resp.iter_content(chunk_size=8192):
+                    if chunk:
+                        yield chunk
+
+            response = StreamingHttpResponse(audio_stream(), content_type='audio/mpeg')
+            response['Cache-Control'] = 'public, max-age=3600'
+            response['Content-Length'] = audio_resp.headers.get('Content-Length', '')
+            return response
+
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except requests.RequestException as e:
+            return Response({'error': f'Preview unavailable: {str(e)}'}, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ChallengeLeaderboardView(APIView):
+    def get(self, request, pk):
+        try:
+            docs = (
+                db.collection('scores')
+                .where('challengeId', '==', pk)
+                .order_by('totalScore', direction='DESCENDING')
+                .order_by('completionTimeMs', direction='ASCENDING')
+                .limit(10)
+                .stream()
+            )
+            results = []
+            rank = 1
+            for doc in docs:
+                d = doc.to_dict()
+                # Never expose userId
+                display_name = d.get('displayName') or f'Player {rank}'
+                results.append({
+                    'rank': rank,
+                    'displayName': display_name,
+                    'totalScore': d.get('totalScore', 0),
+                    'completionTimeMs': d.get('completionTimeMs', 0),
+                    'completedAt': _ts_to_iso(d.get('completedAt')),
+                })
+                rank += 1
+            return Response(results)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 # ─── Challenge endpoints (M2) ────────────────────────────────────────────────

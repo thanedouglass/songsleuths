@@ -13,7 +13,13 @@ urlpatterns = [
     path('challenges/<str:pk>/songs/<int:song_index>/puzzle/',  views.SongPuzzleView.as_view()),
     path('challenges/<str:pk>/songs/<int:song_index>/guess/',   views.SongGuessView.as_view()),
     path('challenges/<str:pk>/songs/<int:song_index>/answer/',  views.SongAnswerView.as_view()),
+
+    # REQ-06: Audio preview proxy (M5)
+    path('challenges/<str:pk>/songs/<int:song_index>/preview/', views.SongPreviewProxyView.as_view()),
+
+    # REQ-07: Per-challenge scores + leaderboard (M5)
     path('challenges/<str:pk>/scores/',                         views.ChallengeScoreView.as_view()),
+    path('challenges/<str:pk>/leaderboard/',                    views.ChallengeLeaderboardView.as_view()),
 
     # Explore (public feed sorted by playCount)
     path('explore/',                                            views.ExploreView.as_view()),
@@ -22,7 +28,7 @@ urlpatterns = [
     path('spotify/playlist/',                                   views.SpotifyPlaylistView.as_view()),
     path('spotify/preview/<str:track_id>/',                     views.SpotifyPreviewView.as_view()),
 
-    # Scores & leaderboard (M1)
+    # Scores & leaderboard (M1 legacy)
     path('scores/',                                             views.ScoreSubmitView.as_view()),
     path('leaderboard/<str:challenge_id>/',                     views.LeaderboardView.as_view()),
 ]

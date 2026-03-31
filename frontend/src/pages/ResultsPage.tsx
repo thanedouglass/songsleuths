@@ -42,6 +42,7 @@ export const ResultsPage: React.FC = () => {
   const [scoreError, setScoreError] = useState<string | null>(null);
   const [scoreId, setScoreId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [rank, setRank] = useState<number | null>(null);
 
   useEffect(() => {
     if (!user || submitted.current || !id || songResults.length === 0) return;
@@ -56,9 +57,13 @@ export const ResultsPage: React.FC = () => {
         status: r.status,
         incorrectCount: r.incorrectCount,
         hintsUsed: r.hintsUsed,
+        displayName: user.displayName || user.email || 'Anonymous',
       })),
     })
-      .then(res => setScoreId(res.scoreId))
+      .then(res => {
+        setScoreId(res.scoreId);
+        if (res.rank) setRank(res.rank);
+      })
       .catch(e => setScoreError(e.message))
       .finally(() => setSubmitting(false));
   }, [user, id]);
@@ -90,9 +95,14 @@ export const ResultsPage: React.FC = () => {
           </p>
         )}
         {scoreId && (
-          <p style={{ ...mono, fontSize: 12, color: '#1DB954', textTransform: 'uppercase', marginBottom: 16 }}>
+          <p style={{ ...mono, fontSize: 12, color: '#1DB954', textTransform: 'uppercase', marginBottom: 8 }}>
             ✓ SCORE SAVED
           </p>
+        )}
+        {rank && (
+          <div style={{ ...mono, fontWeight: 'bold', fontSize: 24, color: '#1DB954', marginBottom: 16 }}>
+            YOU RANKED #{rank}
+          </div>
         )}
         {scoreError && (
           <p style={{ fontFamily: 'Georgia,serif', fontSize: 12, color: '#B3B3B3', marginBottom: 16 }}>
