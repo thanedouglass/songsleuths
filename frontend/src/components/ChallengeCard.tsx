@@ -124,7 +124,7 @@ export const ChallengeCard: React.FC<ChallengeCardProps> = ({
       {/* Actions */}
       <div className="flex items-center gap-3 flex-shrink-0 ml-4">
         <button
-          onClick={() => navigate(`/challenge/${id}`)}
+          onClick={() => navigate(`/play/${id}/0`)}
           className="bg-primary-container text-on-primary font-label font-bold h-10 px-6 rounded-full text-xs hover:scale-105 transition-transform active:scale-95"
           style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
         >

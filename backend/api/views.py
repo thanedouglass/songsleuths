@@ -321,19 +321,24 @@ class ChallengeListCreateView(APIView):
         visibility = (body.get('visibility') or 'public').strip()
 
         if not title:
+            print("Challenge validation failed: Missing title")
             return Response({'error': 'Title is required'}, status=status.HTTP_400_BAD_REQUEST)
         if len(title) > 100:
+            print(f"Challenge validation failed: Title too long ({len(title)} chars)")
             return Response({'error': 'Title must be 100 characters or fewer'}, status=status.HTTP_400_BAD_REQUEST)
 
         playlist_id = _parse_playlist_id(playlist_url)
         if not playlist_id:
+            print(f"Challenge validation failed: Invalid playlist URL ({playlist_url})")
             return Response({'error': 'Invalid playlist URL'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             raw_tracks = spotify_new.get_playlist_tracks(playlist_id)
         except ValueError as e:
+            print(f"Spotify validation error: {e}")
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
+            print(f"Spotify unexpected error: {e}")
             return Response({'error': f'Spotify error: {str(e)}'}, status=status.HTTP_502_BAD_GATEWAY)
 
         songs = [

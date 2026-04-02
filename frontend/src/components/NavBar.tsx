@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { AuthModal } from './AuthModal';
 
 export const NavBar: React.FC = () => {
-  const { user, signIn, signOut } = useAuth();
+  const { user, signOut } = useAuth();
+  const [showModal, setShowModal] = useState(false);
 
   const initials = (name: string | null | undefined) =>
     (name || '?').substring(0, 2).toUpperCase();
@@ -41,13 +43,15 @@ export const NavBar: React.FC = () => {
           </div>
         ) : (
           <button
-            onClick={() => signIn()}
+            onClick={() => setShowModal(true)}
             className="bg-primary-container text-on-primary px-6 py-2 rounded-full font-label font-bold text-sm transition-all active:scale-95 hover:brightness-110"
           >
             Sign In
           </button>
         )}
       </div>
+
+      {showModal && <AuthModal onClose={() => setShowModal(false)} />}
     </header>
   );
 };

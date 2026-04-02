@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
-import { auth, signInWithGoogle, signOut } from '../lib/firebase';
+import { auth, signInWithGoogle, signInAnonymously, signOut } from '../lib/firebase';
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   loading: boolean;
   signIn: () => Promise<void>;
+  signInGuest: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -13,6 +14,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   signIn: async () => {},
+  signInGuest: async () => {},
   signOut: async () => {},
 });
 
@@ -32,7 +34,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const handleSignIn = async () => {
-    await signInWithGoogle();
+    try {
+      await signInWithGoogle();
+    } catch (e: any) {
+      console.error('Sign-in failed. Check .env config:', e);
+      alert(`Sign in failed. Are your Firebase environment variables set? Error: ${e.message}`);
+    }
+  };
+
+  const handleSignInGuest = async () => {
+    try {
+      await signInAnonymously();
+    } catch (e: any) {
+      console.error('Guest sign-in failed. Check .env config:', e);
+      alert(`Guest sign in failed. Are your Firebase environment variables set? Error: ${e.message}`);
+    }
   };
 
   const handleSignOut = async () => {
@@ -48,7 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn: handleSignIn, signOut: handleSignOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn: handleSignIn, signInGuest: handleSignInGuest, signOut: handleSignOut }}>
       {children}
     </AuthContext.Provider>
   );

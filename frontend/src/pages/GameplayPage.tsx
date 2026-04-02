@@ -226,6 +226,12 @@ export const GameplayPage: React.FC = () => {
     finally { submittingGuessRef.current = false; }
   }, [id, songIndex]);
 
+  const handleRevealConfirm = useCallback(async () => {
+    dispatch({ type: 'SHOW_MODAL', show: false });
+    const data = await getSongAnswer(id!, songIndex);
+    dispatch({ type: 'FILL_ANSWER', title: data.title, newStatus: 'revealed', newScore: 0 });
+  }, [id, songIndex]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const s = stateRef.current;
@@ -250,12 +256,6 @@ export const GameplayPage: React.FC = () => {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [handleGuess, handleRevealConfirm]);
-
-  const handleRevealConfirm = useCallback(async () => {
-    dispatch({ type: 'SHOW_MODAL', show: false });
-    const data = await getSongAnswer(id!, songIndex);
-    dispatch({ type: 'FILL_ANSWER', title: data.title, newStatus: 'revealed', newScore: 0 });
-  }, [id, songIndex]);
 
   const handleHint = async () => {
     if (hintUsed || hintPlaying) return;
@@ -295,7 +295,7 @@ export const GameplayPage: React.FC = () => {
   const discoveredLetters = [...correctSet].sort();
 
   const renderTokens = () => {
-    const groups: JSX.Element[] = [];
+    const groups: React.ReactNode[] = [];
     let wordBuffer: PuzzleToken[] = [];
 
     const flushWord = () => {

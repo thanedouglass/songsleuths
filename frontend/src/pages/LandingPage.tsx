@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NavBar } from '../components/NavBar';
+import { AuthModal } from '../components/AuthModal';
 import { ChallengeCard } from '../components/ChallengeCard';
 import { getPublicChallenges } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -12,9 +13,10 @@ const SkeletonCard: React.FC = () => (
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, signIn } = useAuth();
+  const { user } = useAuth();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     getPublicChallenges()
@@ -25,7 +27,7 @@ export const LandingPage: React.FC = () => {
 
   const handleCta = () => {
     if (user) navigate('/create');
-    else signIn();
+    else setShowModal(true);
   };
 
   return (
@@ -54,6 +56,15 @@ export const LandingPage: React.FC = () => {
           >
             {user ? 'CREATE A CHALLENGE' : 'GET STARTED'}
           </button>
+          {!user && (
+            <button
+              onClick={() => navigate('/play/test-challenge/0')}
+              className="bg-surface-container-high text-on-surface font-label font-bold py-4 px-10 rounded-full text-lg hover:brightness-110 md:ml-4 mt-4 md:mt-0 transition-all active:scale-95 shadow-lg"
+              style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+            >
+              DEMO GAMEPLAY
+            </button>
+          )}
         </section>
 
         {/* Public Challenges */}
@@ -143,6 +154,13 @@ export const LandingPage: React.FC = () => {
           </p>
         </div>
       </footer>
+
+      {showModal && (
+        <AuthModal 
+          onClose={() => setShowModal(false)} 
+          onSuccess={() => navigate('/create')}
+        />
+      )}
     </div>
   );
 };
