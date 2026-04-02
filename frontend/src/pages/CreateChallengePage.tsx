@@ -1,55 +1,17 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NavBar } from '../components/NavBar';
+import { NowPlayingBar } from '../components/NowPlayingBar';
 import { createChallenge } from '../lib/api';
 
-const inputStyle: React.CSSProperties = {
-  background: '#282828',
-  color: '#FFFFFF',
-  border: '1px solid #535353',
-  borderRadius: '4px',
-  padding: '12px 16px',
-  fontFamily: '"Courier New", monospace',
-  fontSize: '14px',
-  width: '100%',
-  boxSizing: 'border-box',
-  outline: 'none',
-  transition: 'border-color 0.15s',
-};
-
-const labelStyle: React.CSSProperties = {
-  fontFamily: '"Courier New", monospace',
-  fontWeight: 'bold',
-  fontSize: '11px',
-  color: '#B3B3B3',
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-  display: 'block',
-  marginBottom: '4px',
-};
-
-const counterStyle = (length: number, max: number): React.CSSProperties => ({
-  fontFamily: '"Courier New", monospace',
-  fontSize: '11px',
-  color: length > max * 0.85 ? '#FFFFFF' : '#B3B3B3',
-  textAlign: 'right',
-  marginTop: '4px',
-});
-
-const fieldWrapStyle: React.CSSProperties = {
-  marginBottom: '24px',
-};
-
-const errorMsgStyle: React.CSSProperties = {
-  fontFamily: 'Georgia, serif',
-  fontSize: '12px',
-  color: '#B3B3B3',
-  marginTop: '4px',
-};
+interface FetchedSong {
+  name: string;
+}
 
 export const CreateChallengePage: React.FC = () => {
   const navigate = useNavigate();
 
+  // Form state
   const [playlistUrl, setPlaylistUrl] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -58,17 +20,45 @@ export const CreateChallengePage: React.FC = () => {
   const [apiError, setApiError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ url?: string; title?: string }>({});
 
-  const validate = () => {
-    const errors: { url?: string; title?: string } = {};
-    if (!title.trim()) {
-      errors.title = 'Title is required';
-    }
-    const validUrl =
+  // Fetch/preview state
+  const [fetchedSongs, setFetchedSongs] = useState<FetchedSong[]>([]);
+  const [isFetching, setIsFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [hasFetched, setHasFetched] = useState(false);
+
+  // Progress: 0=source, 1=fetched, 2=ready
+  const step = hasFetched ? (title.trim() ? 2 : 1) : 0;
+  const progress = step / 2;
+
+  const validateUrl = () => {
+    const valid =
       playlistUrl.startsWith('https://open.spotify.com/playlist/') ||
       playlistUrl.startsWith('spotify:playlist:');
-    if (!validUrl) {
-      errors.url = 'Please enter a valid Spotify playlist URL';
-    }
+    return valid ? {} : { url: 'Please enter a valid Spotify playlist URL' };
+  };
+
+  const handleFetch = async () => {
+    setFetchError(null);
+    const errors = validateUrl();
+    setFieldErrors(errors);
+    if (errors.url) return;
+
+    setIsFetching(true);
+    // Stub: in production this would call a /api/playlist/preview/ endpoint.
+    // For now we optimistically accept the URL and show placeholder songs.
+    await new Promise(r => setTimeout(r, 700));
+    setFetchedSongs([
+      { name: 'Song titles will appear here after publishing' },
+      { name: 'Each track becomes a puzzle' },
+      { name: 'Ready to import ✓' },
+    ]);
+    setHasFetched(true);
+    setIsFetching(false);
+  };
+
+  const validate = () => {
+    const errors: { url?: string; title?: string } = { ...validateUrl() };
+    if (!title.trim()) errors.title = 'Title is required';
     return errors;
   };
 
@@ -90,153 +80,270 @@ export const CreateChallengePage: React.FC = () => {
     }
   };
 
-  const focusBorder = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    (e.target as HTMLElement).style.borderColor = '#1DB954';
-  };
-  const blurBorder = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    (e.target as HTMLElement).style.borderColor = '#535353';
-  };
+  const inputClass =
+    'w-full bg-surface-container-lowest border-none focus:ring-1 focus:ring-primary text-on-surface font-body px-4 py-3 outline-none placeholder:text-on-secondary-fixed-variant';
 
   return (
-    <div style={{ minHeight: '100vh', background: '#121212', color: '#FFFFFF' }}>
+    <div className="min-h-screen bg-surface-container-lowest text-on-surface font-body selection:bg-primary selection:text-on-primary">
       <NavBar />
 
-      <div
-        style={{
-          maxWidth: '640px',
-          margin: '0 auto',
-          padding: '48px 16px',
-        }}
-      >
-        <h1
-          style={{
-            fontFamily: '"Courier New", monospace',
-            fontWeight: 'bold',
-            fontSize: '24px',
-            color: '#FFFFFF',
-            textTransform: 'uppercase',
-            marginBottom: '48px',
-          }}
-        >
-          CREATE A CHALLENGE
-        </h1>
+      <main className="max-w-content mx-auto pt-32 pb-24 px-4">
 
-        <form onSubmit={handleSubmit} noValidate>
-          {/* Spotify playlist URL */}
-          <div style={fieldWrapStyle}>
-            <label style={labelStyle}>Spotify Playlist URL</label>
-            <input
-              type="url"
-              value={playlistUrl}
-              onChange={(e) => setPlaylistUrl(e.target.value)}
-              placeholder="https://open.spotify.com/playlist/..."
-              style={inputStyle}
-              onFocus={focusBorder}
-              onBlur={blurBorder}
-              disabled={submitting}
-            />
-            {fieldErrors.url && <p style={errorMsgStyle}>{fieldErrors.url}</p>}
-          </div>
-
-          {/* Challenge title */}
-          <div style={fieldWrapStyle}>
-            <label style={labelStyle}>Challenge Title</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value.slice(0, 100))}
-              placeholder="Give your challenge a name"
-              style={inputStyle}
-              onFocus={focusBorder}
-              onBlur={blurBorder}
-              disabled={submitting}
-            />
-            <div style={counterStyle(title.length, 100)}>{title.length}/100</div>
-            {fieldErrors.title && <p style={errorMsgStyle}>{fieldErrors.title}</p>}
-          </div>
-
-          {/* Description */}
-          <div style={fieldWrapStyle}>
-            <label style={labelStyle}>Description (Optional)</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value.slice(0, 300))}
-              placeholder="Describe your challenge..."
-              style={{
-                ...inputStyle,
-                height: '80px',
-                resize: 'none',
-              }}
-              onFocus={focusBorder}
-              onBlur={blurBorder}
-              disabled={submitting}
-            />
-            <div style={counterStyle(description.length, 300)}>{description.length}/300</div>
-          </div>
-
-          {/* Visibility */}
-          <div style={fieldWrapStyle}>
-            <label style={labelStyle}>Visibility</label>
-            <select
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value)}
-              style={{
-                ...inputStyle,
-                cursor: 'pointer',
-              }}
-              onFocus={focusBorder}
-              onBlur={blurBorder}
-              disabled={submitting}
-            >
-              <option value="public">Public</option>
-              <option value="private">Private — link only</option>
-            </select>
-          </div>
-
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{
-              background: submitting ? '#169C46' : '#1DB954',
-              color: '#FFFFFF',
-              border: 'none',
-              borderRadius: '500px',
-              padding: '14px',
-              width: '100%',
-              fontFamily: '"Courier New", monospace',
-              fontWeight: 'bold',
-              fontSize: '15px',
-              textTransform: 'uppercase',
-              cursor: submitting ? 'not-allowed' : 'pointer',
-              transition: 'background 0.15s',
-              letterSpacing: '0.05em',
-            }}
-            onMouseEnter={(e) => {
-              if (!submitting) (e.target as HTMLButtonElement).style.background = '#1ED760';
-            }}
-            onMouseLeave={(e) => {
-              if (!submitting) (e.target as HTMLButtonElement).style.background = '#1DB954';
-            }}
+        {/* Title */}
+        <section className="mb-12">
+          <h1
+            className="font-headline font-bold text-4xl text-primary"
+            style={{ letterSpacing: '0.08em', textTransform: 'uppercase' }}
           >
-            {submitting ? 'CREATING...' : 'CREATE CHALLENGE'}
-          </button>
+            Create Challenge
+          </h1>
+          <p className="font-body text-on-surface-variant mt-2 text-lg italic">
+            The curator's workspace.
+          </p>
+        </section>
 
-          {apiError && (
-            <p
-              style={{
-                fontFamily: 'Georgia, serif',
-                fontSize: '13px',
-                color: '#B3B3B3',
-                marginTop: '16px',
-                textAlign: 'center',
-              }}
+        {/* Progress indicator */}
+        <div className="mb-16">
+          <NowPlayingBar progress={progress} />
+        </div>
+
+        <form onSubmit={handleSubmit} noValidate className="space-y-16">
+
+          {/* Step 01 — Source */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span
+                className="font-label text-xs text-on-surface-variant"
+                style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+              >
+                01 / Source
+              </span>
+              <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
+                graphic_eq
+              </span>
+            </div>
+
+            <div className="bg-surface-container p-6 space-y-6">
+              <label
+                className="block font-headline text-sm font-bold text-on-surface"
+                style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+              >
+                Spotify Playlist URL
+              </label>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <input
+                  type="url"
+                  value={playlistUrl}
+                  onChange={e => setPlaylistUrl(e.target.value)}
+                  placeholder="https://open.spotify.com/playlist/..."
+                  className={`flex-1 ${inputClass}`}
+                  disabled={submitting}
+                />
+                <button
+                  type="button"
+                  onClick={handleFetch}
+                  disabled={isFetching || submitting}
+                  className="bg-primary-container text-on-primary-container font-label font-bold text-xs px-8 py-3 rounded-full hover:brightness-110 active:scale-95 transition-all disabled:opacity-60"
+                  style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+                >
+                  {isFetching ? 'FETCHING...' : 'FETCH'}
+                </button>
+              </div>
+              {fieldErrors.url && (
+                <p className="font-body text-sm text-error italic">{fieldErrors.url}</p>
+              )}
+              {fetchError && (
+                <p className="font-body text-sm text-error italic">{fetchError}</p>
+              )}
+            </div>
+          </section>
+
+          {/* Step 02 — Preview */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span
+                className="font-label text-xs text-on-surface-variant"
+                style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+              >
+                02 / Preview
+              </span>
+              <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
+                list_alt
+              </span>
+            </div>
+
+            <div className="bg-surface-container p-6">
+              <h3
+                className="font-headline text-sm font-bold text-on-surface mb-6"
+                style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+              >
+                Imported Titles
+              </h3>
+
+              {!hasFetched && (
+                <p className="font-body text-base text-on-surface-variant italic">
+                  Paste a Spotify playlist URL above and click FETCH to preview tracks.
+                </p>
+              )}
+
+              {hasFetched && (
+                <div className="max-h-[280px] overflow-y-auto pr-2 space-y-1">
+                  {fetchedSongs.map((song, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-4 py-3 px-4 bg-surface-container-lowest hover:bg-surface-container-highest transition-colors group"
+                    >
+                      <span
+                        className="font-label text-[10px] text-on-secondary-fixed-variant flex-shrink-0"
+                      >
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                      <span className="font-body text-lg group-hover:text-primary transition-colors">
+                        {song.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Step 03 — Identity */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span
+                className="font-label text-xs text-on-surface-variant"
+                style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+              >
+                03 / Identity
+              </span>
+              <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
+                edit_note
+              </span>
+            </div>
+
+            <div className="bg-surface-container p-6 space-y-8">
+              {/* Title */}
+              <div className="space-y-2">
+                <label
+                  className="block font-headline text-sm font-bold text-on-surface"
+                  style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+                >
+                  Challenge Title
+                </label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={e => setTitle(e.target.value.slice(0, 100))}
+                  placeholder="Enter a name for this hunt..."
+                  className={inputClass}
+                  disabled={submitting}
+                />
+                <div className="flex justify-between items-center">
+                  <span />
+                  <span
+                    className={`font-label text-[11px] ${title.length > 85 ? 'text-on-surface' : 'text-on-surface-variant'}`}
+                  >
+                    {title.length}/100
+                  </span>
+                </div>
+                {fieldErrors.title && (
+                  <p className="font-body text-sm text-error italic">{fieldErrors.title}</p>
+                )}
+              </div>
+
+              {/* Description */}
+              <div className="space-y-2">
+                <label
+                  className="block font-headline text-sm font-bold text-on-surface"
+                  style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+                >
+                  Description (optional)
+                </label>
+                <textarea
+                  value={description}
+                  onChange={e => setDescription(e.target.value.slice(0, 300))}
+                  placeholder="Set the scene for your fellow sleuths..."
+                  rows={3}
+                  className={`${inputClass} resize-none`}
+                  disabled={submitting}
+                />
+                <div className="flex justify-end">
+                  <span
+                    className={`font-label text-[11px] ${description.length > 255 ? 'text-on-surface' : 'text-on-surface-variant'}`}
+                  >
+                    {description.length}/300
+                  </span>
+                </div>
+              </div>
+
+              {/* Visibility */}
+              <div className="space-y-2">
+                <label
+                  className="block font-headline text-sm font-bold text-on-surface"
+                  style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+                >
+                  Visibility
+                </label>
+                <select
+                  value={visibility}
+                  onChange={e => setVisibility(e.target.value)}
+                  className={`${inputClass} cursor-pointer`}
+                  disabled={submitting}
+                >
+                  <option value="public">Public</option>
+                  <option value="private">Private — link only</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          {/* Publish */}
+          <section className="pt-8 flex flex-col items-center gap-6">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full max-w-sm bg-primary-container text-on-primary-container font-headline font-bold text-lg py-5 rounded-full hover:brightness-110 active:scale-95 transition-all shadow-xl disabled:opacity-60"
+              style={{ letterSpacing: '0.15em', textTransform: 'uppercase' }}
             >
-              {apiError}
+              {submitting ? 'PUBLISHING...' : 'PUBLISH'}
+            </button>
+            <p
+              className="font-label text-[10px] text-on-secondary-fixed-variant"
+              style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+            >
+              By publishing, you agree to our curator terms.
             </p>
-          )}
+            {apiError && (
+              <p className="font-body text-sm text-error italic text-center">{apiError}</p>
+            )}
+          </section>
         </form>
-      </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-surface-container-lowest mt-24 py-8">
+        <div className="max-w-content mx-auto px-4 flex flex-col items-center gap-4">
+          <div className="flex gap-8">
+            {['Terms', 'Privacy Policy', 'Support'].map(l => (
+              <a
+                key={l}
+                href="#"
+                className="font-label text-xs text-on-surface-variant hover:text-primary transition-colors"
+                style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+              >
+                {l}
+              </a>
+            ))}
+          </div>
+          <p
+            className="font-label text-[10px] text-on-surface-variant"
+            style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+          >
+            © 2024 SONGSLEUTHS. THE DIGITAL CURATOR.
+          </p>
+        </div>
+      </footer>
     </div>
   );
 };

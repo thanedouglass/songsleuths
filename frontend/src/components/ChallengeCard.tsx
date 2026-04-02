@@ -8,6 +8,8 @@ interface ChallengeCardProps {
   songCount: number;
   createdAt: string;
   playCount: number;
+  imageUrl?: string;
+  curatorName?: string;
   onDelete?: (id: string) => void;
 }
 
@@ -19,6 +21,8 @@ export const ChallengeCard: React.FC<ChallengeCardProps> = ({
   songCount,
   createdAt,
   playCount,
+  imageUrl,
+  curatorName,
   onDelete,
 }) => {
   const navigate = useNavigate();
@@ -40,153 +44,100 @@ export const ChallengeCard: React.FC<ChallengeCardProps> = ({
     }
   };
 
+  if (deleteState !== 'idle') {
+    return (
+      <div className="group bg-surface-container p-6 rounded-lg flex items-center justify-between transition-colors">
+        {deleteState === 'confirming' && (
+          <>
+            <span className="font-body text-sm text-on-surface-variant italic">
+              Delete "{title}"?
+            </span>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleConfirmDelete}
+                className="bg-surface-container-highest text-on-surface font-label font-bold text-xs tracking-widest px-4 py-2 rounded-full hover:bg-error/20 transition-colors"
+              >
+                CONFIRM
+              </button>
+              <button
+                onClick={() => setDeleteState('idle')}
+                className="font-label text-xs text-on-surface-variant hover:text-on-surface transition-colors"
+              >
+                CANCEL
+              </button>
+            </div>
+          </>
+        )}
+        {deleteState === 'deleting' && (
+          <span className="font-label text-xs tracking-widest text-on-surface-variant uppercase">
+            DELETING...
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div
-      style={{
-        background: '#282828',
-        borderRadius: '4px',
-        padding: '16px',
-        marginBottom: '8px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '16px',
-      }}
-    >
-      {/* Left: title + meta */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontFamily: '"Courier New", monospace',
-            fontWeight: 'bold',
-            fontSize: '16px',
-            color: '#FFFFFF',
-            marginBottom: '4px',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {title}
+    <div className="group bg-surface-container p-6 rounded-lg flex items-center justify-between transition-colors hover:bg-surface-container-high">
+      <div className="flex gap-6 items-center min-w-0">
+        {/* Thumbnail */}
+        <div className="w-16 h-16 bg-surface-container-highest rounded-sm overflow-hidden flex-shrink-0">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt=""
+              className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <span className="material-symbols-outlined text-on-surface-variant text-2xl">
+                music_note
+              </span>
+            </div>
+          )}
         </div>
-        <div
-          style={{
-            fontFamily: '"Courier New", monospace',
-            fontSize: '12px',
-            color: '#B3B3B3',
-            textTransform: 'uppercase',
-            letterSpacing: '0.02em',
-          }}
-        >
-          {songCount} SONGS · {playCount} PLAYS · {formattedDate}
+
+        {/* Meta */}
+        <div className="space-y-1 min-w-0">
+          <h3
+            className="font-headline text-base font-bold text-on-surface truncate"
+            style={{ letterSpacing: '0.08em', textTransform: 'uppercase' }}
+          >
+            {title}
+          </h3>
+          {curatorName ? (
+            <p className="font-body text-sm text-on-surface-variant">
+              Curated by <span className="italic">{curatorName}</span>
+            </p>
+          ) : (
+            <p className="font-label text-xs text-on-surface-variant" style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+              {songCount} Songs · {formattedDate}
+            </p>
+          )}
+          <div className="flex items-center gap-2 font-label text-xs text-on-surface-variant" style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+            <span className="material-symbols-outlined text-[14px]">play_arrow</span>
+            <span>{playCount.toLocaleString()} Plays</span>
+          </div>
         </div>
       </div>
 
-      {/* Right: action buttons */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
-        {deleteState === 'idle' && (
-          <>
-            <button
-              onClick={() => navigate(`/challenge/${id}`)}
-              style={{
-                background: '#1DB954',
-                color: '#FFFFFF',
-                border: 'none',
-                borderRadius: '500px',
-                padding: '8px 16px',
-                fontFamily: '"Courier New", monospace',
-                fontWeight: 'bold',
-                fontSize: '13px',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                transition: 'background 0.15s',
-              }}
-              onMouseEnter={(e) => ((e.target as HTMLButtonElement).style.background = '#1ED760')}
-              onMouseLeave={(e) => ((e.target as HTMLButtonElement).style.background = '#1DB954')}
-            >
-              PLAY
-            </button>
-
-            {onDelete && (
-              <button
-                onClick={() => setDeleteState('confirming')}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#535353',
-                  fontFamily: '"Courier New", monospace',
-                  fontSize: '12px',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                  padding: '4px',
-                  transition: 'color 0.15s',
-                }}
-                onMouseEnter={(e) => ((e.target as HTMLButtonElement).style.color = '#B3B3B3')}
-                onMouseLeave={(e) => ((e.target as HTMLButtonElement).style.color = '#535353')}
-              >
-                DELETE
-              </button>
-            )}
-          </>
-        )}
-
-        {deleteState === 'confirming' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span
-              style={{
-                fontFamily: 'Georgia, serif',
-                fontSize: '12px',
-                color: '#B3B3B3',
-              }}
-            >
-              Delete this challenge?
-            </span>
-            <button
-              onClick={handleConfirmDelete}
-              style={{
-                background: '#535353',
-                color: '#FFFFFF',
-                border: 'none',
-                borderRadius: '500px',
-                padding: '6px 12px',
-                fontFamily: '"Courier New", monospace',
-                fontWeight: 'bold',
-                fontSize: '11px',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-              }}
-            >
-              CONFIRM
-            </button>
-            <button
-              onClick={() => setDeleteState('idle')}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#B3B3B3',
-                fontFamily: '"Courier New", monospace',
-                fontSize: '11px',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                padding: '4px',
-              }}
-            >
-              CANCEL
-            </button>
-          </div>
-        )}
-
-        {deleteState === 'deleting' && (
-          <span
-            style={{
-              fontFamily: '"Courier New", monospace',
-              fontSize: '12px',
-              color: '#535353',
-              textTransform: 'uppercase',
-            }}
+      {/* Actions */}
+      <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+        <button
+          onClick={() => navigate(`/challenge/${id}`)}
+          className="bg-primary-container text-on-primary font-label font-bold h-10 px-6 rounded-full text-xs hover:scale-105 transition-transform active:scale-95"
+          style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+        >
+          PLAY
+        </button>
+        {onDelete && (
+          <button
+            onClick={() => setDeleteState('confirming')}
+            className="font-label text-xs text-on-surface-variant hover:text-on-surface transition-colors"
+            style={{ letterSpacing: '0.05em', textTransform: 'uppercase' }}
           >
-            DELETING...
-          </span>
+            DELETE
+          </button>
         )}
       </div>
     </div>

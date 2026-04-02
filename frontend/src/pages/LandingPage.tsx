@@ -7,20 +7,12 @@ import { useAuth } from '../context/AuthContext';
 import type { Challenge } from '../types';
 
 const SkeletonCard: React.FC = () => (
-  <div
-    style={{
-      background: '#282828',
-      borderRadius: '4px',
-      height: '72px',
-      marginBottom: '8px',
-      opacity: 0.5,
-    }}
-  />
+  <div className="bg-surface-container p-6 rounded-lg h-[88px] animate-pulse opacity-50" />
 );
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, signIn } = useAuth();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,123 +23,126 @@ export const LandingPage: React.FC = () => {
       .finally(() => setLoading(false));
   }, []);
 
+  const handleCta = () => {
+    if (user) navigate('/create');
+    else signIn();
+  };
+
   return (
-    <div style={{ minHeight: '100vh', background: '#121212', color: '#FFFFFF' }}>
+    <div className="min-h-screen bg-surface-container-lowest text-on-surface font-body selection:bg-primary selection:text-on-primary">
       <NavBar />
 
-      {/* Hero */}
-      <div
-        style={{
-          maxWidth: '640px',
-          margin: '0 auto',
-          padding: '80px 16px 0',
-          textAlign: 'center',
-        }}
-      >
-        <h1
-          style={{
-            fontFamily: '"Courier New", monospace',
-            fontWeight: 'bold',
-            fontSize: '48px',
-            color: '#FFFFFF',
-            lineHeight: 1.1,
-            marginBottom: '16px',
-            textTransform: 'uppercase',
-          }}
-        >
-          GUESS THE SONG.
-        </h1>
-        <p
-          style={{
-            fontFamily: 'Georgia, serif',
-            fontSize: '18px',
-            color: '#B3B3B3',
-            marginBottom: '48px',
-            lineHeight: 1.6,
-          }}
-        >
-          Build a challenge from any Spotify playlist. Share it. Compete.
-        </p>
-
-        <button
-          onClick={() => navigate(user ? '/create' : '/login')}
-          style={{
-            background: '#1DB954',
-            color: '#FFFFFF',
-            border: 'none',
-            borderRadius: '500px',
-            padding: '14px 32px',
-            fontFamily: '"Courier New", monospace',
-            fontWeight: 'bold',
-            fontSize: '15px',
-            textTransform: 'uppercase',
-            cursor: 'pointer',
-            letterSpacing: '0.05em',
-            transition: 'background 0.15s',
-          }}
-          onMouseEnter={(e) => ((e.target as HTMLButtonElement).style.background = '#1ED760')}
-          onMouseLeave={(e) => ((e.target as HTMLButtonElement).style.background = '#1DB954')}
-        >
-          {user ? 'CREATE A CHALLENGE' : 'GET STARTED'}
-        </button>
-      </div>
-
-      {/* Recent Challenges */}
-      <div
-        style={{
-          maxWidth: '640px',
-          margin: '80px auto 0',
-          padding: '0 16px 80px',
-        }}
-      >
-        <h2
-          style={{
-            fontFamily: '"Courier New", monospace',
-            fontWeight: 'bold',
-            fontSize: '18px',
-            color: '#FFFFFF',
-            textTransform: 'uppercase',
-            marginBottom: '24px',
-          }}
-        >
-          RECENT CHALLENGES
-        </h2>
-
-        {loading && (
-          <>
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </>
-        )}
-
-        {!loading && challenges.length === 0 && (
-          <p
-            style={{
-              fontFamily: 'Georgia, serif',
-              fontStyle: 'italic',
-              fontSize: '16px',
-              color: '#B3B3B3',
-              textAlign: 'center',
-            }}
+      <main className="max-w-content mx-auto pt-32 pb-16 px-4 space-y-24">
+        {/* Hero */}
+        <section className="text-center space-y-8">
+          <div className="space-y-4">
+            <h1
+              className="font-headline text-4xl md:text-5xl font-bold text-on-surface leading-tight"
+              style={{ letterSpacing: '0.08em', textTransform: 'uppercase' }}
+            >
+              Guess Song Titles From Your Playlists
+            </h1>
+            <p className="font-body text-xl text-on-surface-variant max-w-md mx-auto italic">
+              Connect your library and decode the rhythm. A high-fidelity sonic
+              challenge for the modern listener.
+            </p>
+          </div>
+          <button
+            onClick={handleCta}
+            className="bg-primary-container text-on-primary font-label font-bold py-4 px-10 rounded-full text-lg hover:brightness-110 transition-all active:scale-95 shadow-lg"
+            style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
           >
-            No challenges yet. Be the first to create one!
-          </p>
-        )}
+            {user ? 'CREATE A CHALLENGE' : 'GET STARTED'}
+          </button>
+        </section>
 
-        {!loading &&
-          challenges.map((c) => (
-            <ChallengeCard
-              key={c.id}
-              id={c.id}
-              title={c.title}
-              songCount={c.songCount}
-              createdAt={c.createdAt}
-              playCount={c.playCount}
-              // no onDelete — guests cannot delete
-            />
-          ))}
-      </div>
+        {/* Public Challenges */}
+        <section className="space-y-12">
+          <div className="flex justify-between items-end">
+            <h2
+              className="font-headline text-xl font-bold text-primary"
+              style={{ letterSpacing: '0.08em', textTransform: 'uppercase' }}
+            >
+              Public Challenges
+            </h2>
+            <span
+              className="font-label text-xs text-on-surface-variant"
+              style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+            >
+              Live Feed
+            </span>
+          </div>
+
+          <div className="space-y-4">
+            {loading && (
+              <>
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </>
+            )}
+
+            {!loading && challenges.length === 0 && (
+              <p className="font-body text-base text-on-surface-variant italic text-center py-8">
+                No challenges yet. Be the first to create one!
+              </p>
+            )}
+
+            {!loading &&
+              challenges.map((c) => (
+                <ChallengeCard
+                  key={c.id}
+                  id={c.id}
+                  title={c.title}
+                  songCount={c.songCount}
+                  createdAt={c.createdAt}
+                  playCount={c.playCount}
+                />
+              ))}
+          </div>
+        </section>
+
+        {/* Editorial Quote */}
+        <section className="py-12" style={{ borderTop: '1px solid rgba(61,74,61,0.1)', borderBottom: '1px solid rgba(61,74,61,0.1)' }}>
+          <blockquote className="font-body text-2xl text-on-surface italic text-center leading-relaxed">
+            "Music is the shorthand of emotion. We just help you remember the
+            words."
+          </blockquote>
+          <div className="mt-4 text-center">
+            <span
+              className="font-label text-xs text-primary"
+              style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+            >
+              — THE SONIC MONOLITH
+            </span>
+          </div>
+        </section>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-surface-container-lowest py-16">
+        <div className="max-w-content mx-auto px-4 flex flex-col items-center gap-8">
+          <div className="flex gap-8">
+            {['Terms', 'Privacy Policy', 'Support'].map((link) => (
+              <a
+                key={link}
+                href="#"
+                className="font-label text-xs text-on-surface-variant hover:text-primary transition-colors"
+                style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+              >
+                {link}
+              </a>
+            ))}
+          </div>
+          <div className="h-px w-12 bg-primary opacity-30" />
+          <p
+            className="font-label text-[10px] text-on-surface-variant text-center opacity-60"
+            style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+          >
+            © 2024 SONGSLEUTHS. THE DIGITAL CURATOR.
+          </p>
+        </div>
+      </footer>
     </div>
   );
 };

@@ -107,7 +107,7 @@ export const ChallengeDetailPage: React.FC = () => {
 
         {/* Play button */}
         <button
-          onClick={() => navigate(`/play/${id}/0`)}
+          onClick={() => navigate(`/play/${id}/0`, { state: { challengeTitle: challenge.title } })}
           style={{
             background: '#1DB954', color: '#FFFFFF', border: 'none', borderRadius: 500,
             padding: '14px 40px', ...mono, fontWeight: 'bold', fontSize: 15,

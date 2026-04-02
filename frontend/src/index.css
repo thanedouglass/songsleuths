@@ -2,20 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Material Symbols font variation */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
 body {
-  background: #121212;
-  color: #FFFFFF;
-  font-family: Georgia, serif;
+  background-color: #0e0e0e;
+  color: #e5e2e1;
+  font-family: 'Newsreader', Georgia, serif;
   margin: 0;
   padding: 0;
   overflow-x: hidden;
 }
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
-/* Responsive tile sizing for gameplay board */
+/* Tile flip animation for correct guesses */
+@keyframes flipTile {
+  0%   { transform: rotateY(0deg);   }
+  50%  { transform: rotateY(90deg);  }
+  100% { transform: rotateY(0deg);   }
+}
+
+/* Responsive tile sizing */
 .tile {
   width: 44px;
   height: 44px;
@@ -26,7 +40,7 @@ body {
   .tile {
     width: 52px;
     height: 52px;
-    font-size: 26px;
+    font-size: 24px;
   }
 }
 
@@ -39,13 +53,16 @@ body {
 
 @media (min-width: 480px) {
   .key {
-    width: 36px;
-    height: 48px;
+    width: 40px;
+    height: 52px;
     font-size: 13px;
   }
 }
 
-/* Ensure images/media don't overflow */
-img, video, iframe {
-  max-width: 100%;
-}
+/* Custom scrollbar — Sonic Monolith */
+::-webkit-scrollbar          { width: 4px; }
+::-webkit-scrollbar-track    { background: #0e0e0e; }
+::-webkit-scrollbar-thumb    { background: #353534; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #53e076; }
+
+img, video, iframe { max-width: 100%; }

@@ -1,6 +1,15 @@
-import React, { useReducer, useEffect, useRef, useCallback, useState } from 'react';
+import React, {
+  useReducer,
+  useEffect,
+  useRef,
+  useCallback,
+  useState,
+} from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { NavBar } from '../components/NavBar';
+import { PuzzleTile } from '../components/PuzzleTile';
+import { Keyboard } from '../components/Keyboard';
+import { NowPlayingBar } from '../components/NowPlayingBar';
 import { getChallengePuzzle, submitGuess, getSongAnswer } from '../lib/api';
 import type { PuzzleToken } from '../lib/api';
 
@@ -96,8 +105,6 @@ function reducer(state: GameState, action: GameAction): GameState {
   }
 }
 
-const ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const GameplayPage: React.FC = () => {
@@ -105,6 +112,8 @@ export const GameplayPage: React.FC = () => {
   const songIndex = parseInt(idxStr ?? '0', 10);
   const navigate = useNavigate();
   const location = useLocation();
+
+  const challengeTitle = (location.state as any)?.challengeTitle ?? '';
 
   const [state, dispatch] = useReducer(reducer, initial);
   const stateRef = useRef(state);
@@ -117,8 +126,19 @@ export const GameplayPage: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioBlobUrl = useRef<string | null>(null);
 
-  // Audio hint state (outside reducer — purely UI)
-  const [hintAvailable, setHintAvailable] = useState<boolean | null>(null); // null = checking
+  // Elapsed timer (UI only)
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (state.status !== 'playing') return;
+    const interval = setInterval(() => setElapsed(s => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [state.status]);
+
+  const formatElapsed = (s: number) =>
+    `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+  // Audio hint state
+  const [hintAvailable, setHintAvailable] = useState<boolean | null>(null);
   const [hintUsed, setHintUsed] = useState(false);
   const [hintPlaying, setHintPlaying] = useState(false);
   const [hintProgress, setHintProgress] = useState(0);
@@ -127,6 +147,7 @@ export const GameplayPage: React.FC = () => {
   useEffect(() => {
     advancedRef.current = false;
     startTime.current = Date.now();
+    setElapsed(0);
     setHintAvailable(null);
     setHintUsed(false);
     setHintPlaying(false);
@@ -136,8 +157,6 @@ export const GameplayPage: React.FC = () => {
     dispatch({ type: 'LOAD', payload: { tokens: [], artist: '', previewUrl: null, songId: '', songCount: 1 } });
     getChallengePuzzle(id!, songIndex).then(data => {
       dispatch({ type: 'LOAD', payload: { tokens: data.puzzleTokens, artist: data.artist, previewUrl: data.previewUrl, songId: data.songId, songCount: data.songCount } });
-
-      // Check if preview is available via a lightweight HEAD-like fetch
       const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
       fetch(`${baseUrl}/api/challenges/${id}/songs/${songIndex}/preview/`, { method: 'HEAD' })
         .then(r => setHintAvailable(r.ok))
@@ -167,9 +186,9 @@ export const GameplayPage: React.FC = () => {
     if (next >= s.songCount) {
       navigate(`/results/${id}`, { state: { songResults: newResults, startTime: startTime.current } });
     } else {
-      navigate(`/play/${id}/${next}`, { state: { songResults: newResults } });
+      navigate(`/play/${id}/${next}`, { state: { songResults: newResults, challengeTitle } });
     }
-  }, [id, songIndex, navigate]);
+  }, [id, songIndex, navigate, challengeTitle]);
 
   useEffect(() => {
     if (state.status !== 'won') return;
@@ -198,42 +217,52 @@ export const GameplayPage: React.FC = () => {
     const L = letter.toUpperCase();
     if (s.wrongGuesses.includes(L)) return;
     if (new Set(Object.values(s.revealedAt)).has(L)) return;
-
     submittingGuessRef.current = true;
     try {
       const res = await submitGuess(id!, songIndex, L);
-      if (res.correct) {
-        dispatch({ type: 'CORRECT', letter: L, positions: res.positions });
-      } else {
-        dispatch({ type: 'WRONG', letter: L });
-      }
+      if (res.correct) dispatch({ type: 'CORRECT', letter: L, positions: res.positions });
+      else dispatch({ type: 'WRONG', letter: L });
     } catch { /* ignore */ }
     finally { submittingGuessRef.current = false; }
   }, [id, songIndex]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (stateRef.current.status !== 'playing') return;
+      const s = stateRef.current;
+
+      // Enter — open reveal modal when playing; confirm it when modal is already open
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (s.showRevealModal) handleRevealConfirm();
+        else if (s.status === 'playing') dispatch({ type: 'SHOW_MODAL', show: true });
+        return;
+      }
+
+      // Backspace — dismiss the reveal modal
+      if (e.key === 'Backspace') {
+        if (s.showRevealModal) dispatch({ type: 'SHOW_MODAL', show: false });
+        return;
+      }
+
+      if (s.status !== 'playing') return;
       if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) handleGuess(e.key);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleGuess]);
+  }, [handleGuess, handleRevealConfirm]);
 
-  const handleRevealConfirm = async () => {
+  const handleRevealConfirm = useCallback(async () => {
     dispatch({ type: 'SHOW_MODAL', show: false });
     const data = await getSongAnswer(id!, songIndex);
     dispatch({ type: 'FILL_ANSWER', title: data.title, newStatus: 'revealed', newScore: 0 });
-  };
+  }, [id, songIndex]);
 
-  // Audio hint handler
   const handleHint = async () => {
     if (hintUsed || hintPlaying) return;
     dispatch({ type: 'USE_HINT' });
     setHintUsed(true);
     setHintPlaying(true);
     setHintProgress(0);
-
     try {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
       const resp = await fetch(`${baseUrl}/api/challenges/${id}/songs/${songIndex}/preview/`);
@@ -241,12 +270,9 @@ export const GameplayPage: React.FC = () => {
       const blob = await resp.blob();
       const blobUrl = URL.createObjectURL(blob);
       audioBlobUrl.current = blobUrl;
-
       const audio = new Audio(blobUrl);
       audioRef.current = audio;
-
-      // Animate progress bar
-      const duration = 30; // seconds cap
+      const duration = 30;
       let start = 0;
       const tick = () => {
         start += 0.1;
@@ -254,7 +280,6 @@ export const GameplayPage: React.FC = () => {
         if (start < duration && !audio.ended) requestAnimationFrame(tick);
         else setHintPlaying(false);
       };
-
       audio.addEventListener('ended', () => { setHintPlaying(false); setHintProgress(1); });
       audio.play().then(() => requestAnimationFrame(tick)).catch(() => setHintPlaying(false));
     } catch {
@@ -263,168 +288,253 @@ export const GameplayPage: React.FC = () => {
   };
 
   // ─── Render helpers ────────────────────────────────────────────────────────
+
   const correctSet = new Set(Object.values(state.revealedAt));
-  const mono: React.CSSProperties = { fontFamily: '"Courier New", monospace' };
+  const wrongSet = new Set(state.wrongGuesses);
 
-  const renderTile = (token: PuzzleToken, idx: number) => {
-    if (token.type === 'space') return <span key={idx} style={{ display: 'inline-block', width: 8 }} />;
-    if (token.type === 'punctuation') {
-      return <span key={idx} style={{ ...mono, fontSize: 22, fontWeight: 'bold', color: '#B3B3B3', margin: '0 1px' }}>{token.char}</span>;
-    }
-    const pos = token.position!;
-    const revealedLetter = state.revealedAt[pos];
-    const isRevealed = revealedLetter !== undefined;
-    const isRecent = state.recentRevealPositions.includes(pos);
-    const isLost = (state.status === 'lost') && isRevealed && !correctSet.has(revealedLetter);
-    const staggerIdx = state.recentRevealPositions.indexOf(pos);
-    const delay = staggerIdx >= 0 ? staggerIdx * 60 : 0;
-    let bg = '#282828', border = '2px solid #535353', color = 'transparent';
-    if (isRevealed && !isLost) { bg = '#1DB954'; border = 'none'; color = '#FFFFFF'; }
-    if (isRevealed && isLost)  { bg = '#191414'; border = 'none'; color = '#B3B3B3'; }
-    return (
-      <span key={idx} className="tile" style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        borderRadius: 4, background: bg, border, ...mono, fontWeight: 'bold', color,
-        margin: '2px',
-        animation: isRecent ? `flipTile 0.4s ease-in-out ${delay}ms both` : undefined,
-        transition: 'background 0.2s',
-      }}>
-        {isRevealed ? revealedLetter : ''}
-      </span>
-    );
+  const discoveredLetters = [...correctSet].sort();
+
+  const renderTokens = () => {
+    const groups: JSX.Element[] = [];
+    let wordBuffer: PuzzleToken[] = [];
+
+    const flushWord = () => {
+      if (wordBuffer.length === 0) return;
+      groups.push(
+        <div key={`word-${groups.length}`} className="flex gap-1 mb-2">
+          {wordBuffer.map((t, i) => {
+            const pos = t.position!;
+            const revealedLetter = state.revealedAt[pos];
+            const isRevealed = revealedLetter !== undefined;
+            const isLost = state.status === 'lost' && isRevealed && !correctSet.has(revealedLetter);
+            const isRecent = state.recentRevealPositions.includes(pos);
+            const staggerIdx = state.recentRevealPositions.indexOf(pos);
+            return (
+              <PuzzleTile
+                key={i}
+                letter={isRevealed ? revealedLetter : undefined}
+                state={isRevealed ? (isLost ? 'wrong' : 'correct') : 'unrevealed'}
+                isRecent={isRecent}
+                delay={staggerIdx >= 0 ? staggerIdx * 60 : 0}
+              />
+            );
+          })}
+        </div>
+      );
+      wordBuffer = [];
+    };
+
+    state.tokens.forEach((token, idx) => {
+      if (token.type === 'space') {
+        flushWord();
+        groups.push(<div key={`space-${idx}`} className="w-2" />);
+      } else if (token.type === 'punctuation') {
+        flushWord();
+        groups.push(
+          <span
+            key={`punct-${idx}`}
+            className="font-headline text-2xl font-bold text-on-surface-variant opacity-40 mx-0.5 self-center"
+          >
+            {token.char}
+          </span>
+        );
+      } else {
+        wordBuffer.push(token);
+      }
+    });
+    flushWord();
+    return groups;
   };
 
-  const renderKey = (letter: string) => {
-    const isWrong = state.wrongGuesses.includes(letter);
-    const isCorrect = correctSet.has(letter);
-    const disabled = isWrong || isCorrect || state.status !== 'playing';
-    return (
-      <button key={letter} onClick={() => handleGuess(letter)} disabled={disabled}
-        className="key"
-        style={{
-          borderRadius: 4,
-          background: isCorrect ? '#1DB954' : isWrong ? '#535353' : '#282828',
-          color: isWrong ? '#B3B3B3' : '#FFFFFF',
-          border: 'none', cursor: disabled ? 'default' : 'pointer',
-          ...mono, fontWeight: 'bold',
-          transition: 'background 0.15s', margin: '2px',
-          opacity: disabled && !isCorrect && !isWrong ? 0.6 : 1,
-          minHeight: 44, minWidth: 32,
-        }}
-      >
-        {letter}
-      </button>
-    );
-  };
+  const progress = state.songCount > 0 ? (songIndex) / state.songCount : 0;
+
+  // ─── Page ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ minHeight: '100vh', background: '#121212', color: '#FFFFFF' }}>
-      <style>{`
-        @keyframes flipTile {
-          0%   { transform: rotateY(0deg); }
-          50%  { transform: rotateY(90deg); }
-          100% { transform: rotateY(0deg); }
-        }
-      `}</style>
-
+    <div className="min-h-screen bg-surface-container-lowest text-on-surface font-body selection:bg-primary selection:text-on-primary">
       <NavBar />
-      <div style={{ maxWidth: 640, margin: '0 auto', padding: '24px 16px' }}>
 
-        <div style={{ ...mono, fontSize: 12, color: '#B3B3B3', textTransform: 'uppercase', marginBottom: 16, textAlign: 'center' }}>
-          SONG {songIndex + 1} OF {state.songCount}
-        </div>
+      {/* Full-width progress bar just below fixed header */}
+      <div className="fixed top-16 left-0 right-0 z-40">
+        <NowPlayingBar progress={progress} />
+      </div>
 
+      <main className="max-w-content mx-auto pt-24 pb-32 px-4 flex flex-col min-h-screen">
+
+        {/* Header */}
+        <section className="mb-12 mt-4">
+          {challengeTitle && (
+            <h2
+              className="font-headline text-2xl font-bold text-on-surface mb-1"
+              style={{ letterSpacing: '0.08em' }}
+            >
+              {challengeTitle}
+            </h2>
+          )}
+          <p
+            className="font-label text-xs text-on-surface-variant"
+            style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+          >
+            Song {songIndex + 1} of {state.songCount}
+          </p>
+        </section>
+
+        {/* Stats Bar */}
+        <section className="grid grid-cols-3 gap-4 mb-16">
+          {[
+            { label: 'Attempts', value: state.attemptsLeft, highlight: false },
+            { label: 'Score', value: state.score, highlight: true },
+            { label: 'Time', value: formatElapsed(elapsed), highlight: false },
+          ].map(({ label, value, highlight }) => (
+            <div key={label} className="bg-surface-container p-4 flex flex-col items-center justify-center rounded-lg">
+              <span
+                className="font-label text-[10px] text-on-surface-variant mb-1"
+                style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+              >
+                {label}
+              </span>
+              <span className={`font-headline text-lg font-bold ${highlight ? 'text-primary' : 'text-on-surface'}`}>
+                {value}
+              </span>
+            </div>
+          ))}
+        </section>
+
+        {/* Status Messages */}
         {state.status === 'won' && (
-          <div style={{ ...mono, fontWeight: 'bold', fontSize: 24, color: '#1DB954', textAlign: 'center', marginBottom: 12 }}>NICE!</div>
+          <p
+            className="font-headline text-2xl font-bold text-primary text-center mb-6"
+            style={{ letterSpacing: '0.08em' }}
+          >
+            NICE!
+          </p>
         )}
         {state.status === 'lost' && (
-          <div style={{ ...mono, fontWeight: 'bold', fontSize: 24, color: '#B3B3B3', textAlign: 'center', marginBottom: 12 }}>GAME OVER</div>
+          <p
+            className="font-headline text-2xl font-bold text-on-surface-variant text-center mb-6"
+            style={{ letterSpacing: '0.08em' }}
+          >
+            GAME OVER
+          </p>
         )}
 
-        {/* Attempt squares */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 24 }}>
-          {[0, 1, 2].map(i => (
-            <div key={i} style={{ width: 20, height: 20, borderRadius: 4, background: i < state.attemptsLeft ? '#1DB954' : '#535353', transition: 'background 0.2s' }} />
-          ))}
-        </div>
-
-        {/* Tile board */}
+        {/* Tile Board */}
         {state.status !== 'loading' && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 32, minHeight: 50, gap: 4 }}>
-            {state.tokens.map((t, i) => renderTile(t, i))}
-          </div>
+          <section className="flex flex-wrap justify-center gap-x-3 gap-y-1 mb-12 max-w-[400px] mx-auto">
+            {renderTokens()}
+          </section>
         )}
 
-        <div style={{ fontFamily: 'Georgia, serif', fontSize: 14, color: '#535353', textAlign: 'center', marginBottom: 24 }}>
+        {/* Artist */}
+        <p className="font-body text-sm text-on-surface-variant italic text-center mb-12">
           by {state.artist}
-        </div>
+        </p>
 
-        {/* Keyboard */}
-        {ROWS.map((row, ri) => (
-          <div key={ri} style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>
-            {row.split('').map(renderKey)}
-          </div>
-        ))}
+        {/* Letters Discovered */}
+        {discoveredLetters.length > 0 && (
+          <section className="flex flex-col items-center mb-12">
+            <span
+              className="font-label text-[10px] text-on-surface-variant mb-4"
+              style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+            >
+              Letters Discovered
+            </span>
+            <div className="flex gap-3 text-on-surface font-headline font-bold text-lg flex-wrap justify-center">
+              {discoveredLetters.map((letter, i) => (
+                <React.Fragment key={letter}>
+                  <span>{letter}</span>
+                  {i < discoveredLetters.length - 1 && (
+                    <span className="text-outline-variant opacity-30">·</span>
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          </section>
+        )}
 
-        {/* Hint + Reveal buttons */}
+        {/* Hint + Reveal Actions */}
         {state.status === 'playing' && (
-          <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-            {/* Audio hint */}
+          <section className="flex flex-col items-center gap-4 mb-24">
             {hintAvailable && (
-              <div style={{ textAlign: 'center' }}>
+              <div className="text-center">
                 {hintUsed ? (
                   <div>
-                    <span style={{ ...mono, fontSize: 11, color: '#535353', textTransform: 'uppercase' }}>HINT USED</span>
+                    <span
+                      className="font-label text-[10px] text-on-surface-variant"
+                      style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
+                    >
+                      Hint Used
+                    </span>
                     {hintPlaying && (
-                      <div style={{ marginTop: 6, width: 160, height: 3, background: '#282828', borderRadius: 2, overflow: 'hidden' }}>
-                        <div style={{ width: `${hintProgress * 100}%`, height: '100%', background: '#1DB954', transition: 'width 0.1s linear' }} />
+                      <div className="mt-2 w-40 h-0.5 bg-surface-container-highest rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-100"
+                          style={{ width: `${hintProgress * 100}%` }}
+                        />
                       </div>
                     )}
                   </div>
                 ) : (
                   <button
                     onClick={handleHint}
-                    style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      ...mono, fontWeight: 'bold', fontSize: 12, color: '#B3B3B3',
-                      textTransform: 'uppercase', minHeight: 44, padding: '0 8px',
-                    }}
+                    className="font-label text-sm font-bold text-on-surface-variant hover:text-primary transition-colors"
+                    style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
                   >
-                    ▶ HINT (-25 PTS)
+                    ▶ HINT (−25 PTS)
                   </button>
                 )}
               </div>
             )}
 
-            {/* Reveal answer */}
             <button
               onClick={() => dispatch({ type: 'SHOW_MODAL', show: true })}
-              style={{ background: 'none', border: 'none', ...mono, fontSize: 12, color: '#535353', cursor: 'pointer', textTransform: 'uppercase', minHeight: 44 }}
+              className="px-8 py-3 rounded-full border-2 border-outline-variant text-on-surface font-label font-bold hover:bg-surface-container transition-colors active:scale-95"
+              style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
             >
               REVEAL ANSWER
             </button>
-          </div>
+          </section>
         )}
 
-        {/* Reveal modal */}
-        {state.showRevealModal && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-            <div style={{ background: '#282828', borderRadius: 8, padding: 32, maxWidth: 360, width: '90%', textAlign: 'center' }}>
-              <p style={{ fontFamily: 'Georgia, serif', fontSize: 16, color: '#FFFFFF', marginBottom: 24 }}>
-                Reveal the answer? You'll score 0 points for this song.
-              </p>
-              <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
-                <button onClick={handleRevealConfirm} style={{ background: '#535353', color: '#FFFFFF', border: 'none', borderRadius: 500, padding: '10px 20px', ...mono, fontWeight: 'bold', fontSize: 13, textTransform: 'uppercase', cursor: 'pointer', minHeight: 44 }}>
-                  CONFIRM
-                </button>
-                <button onClick={() => dispatch({ type: 'SHOW_MODAL', show: false })} style={{ background: 'none', border: 'none', ...mono, fontSize: 13, color: '#B3B3B3', cursor: 'pointer', textTransform: 'uppercase', minHeight: 44 }}>
-                  CANCEL
-                </button>
-              </div>
+        {/* Keyboard */}
+        <section className="mt-auto pb-8">
+          <Keyboard
+            correctLetters={correctSet}
+            wrongLetters={wrongSet}
+            onGuess={handleGuess}
+            onEnter={() => dispatch({ type: 'SHOW_MODAL', show: true })}
+            onBackspace={() => dispatch({ type: 'SHOW_MODAL', show: false })}
+            disabled={state.status !== 'playing'}
+          />
+        </section>
+      </main>
+
+      {/* Reveal Confirm Modal */}
+      {state.showRevealModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-surface-container rounded-lg p-8 max-w-sm w-[90%] text-center">
+            <p className="font-body text-base text-on-surface mb-6">
+              Reveal the answer? You'll score 0 points for this song.
+            </p>
+            <div className="flex gap-4 justify-center">
+              <button
+                onClick={handleRevealConfirm}
+                className="bg-surface-container-highest text-on-surface font-label font-bold text-sm px-6 py-3 rounded-full hover:bg-surface-bright transition-colors"
+                style={{ letterSpacing: '0.08em', textTransform: 'uppercase' }}
+              >
+                CONFIRM
+              </button>
+              <button
+                onClick={() => dispatch({ type: 'SHOW_MODAL', show: false })}
+                className="font-label text-sm text-on-surface-variant hover:text-on-surface transition-colors"
+                style={{ letterSpacing: '0.08em', textTransform: 'uppercase' }}
+              >
+                CANCEL
+              </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

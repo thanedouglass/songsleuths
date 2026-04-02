@@ -3,41 +3,51 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export const NavBar: React.FC = () => {
-  const { user, signOut } = useAuth();
+  const { user, signIn, signOut } = useAuth();
 
-  const getInitials = (name: string | null) => {
-    if (!name) return '?';
-    return name.substring(0, 2).toUpperCase();
-  };
+  const initials = (name: string | null | undefined) =>
+    (name || '?').substring(0, 2).toUpperCase();
 
   return (
-    <nav className="flex h-[64px] w-full items-center justify-between border-b border-black-surface bg-black-deep px-4 font-mono uppercase">
-      <Link to="/" className="text-[20px] font-bold text-green no-underline">
-        SONGSLEUTHS
-      </Link>
-      
-      <div className="flex items-center space-x-4">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest h-16 flex items-center">
+      <div className="flex justify-between items-center max-w-content mx-auto px-4 w-full">
+        <Link
+          to="/"
+          className="text-2xl font-bold tracking-widest text-primary font-headline no-underline"
+          style={{ letterSpacing: '0.08em' }}
+        >
+          SONGSLEUTHS
+        </Link>
+
+        <a
+          href="/privacy"
+          className="hidden sm:block font-label text-[11px] text-on-surface-variant hover:text-primary transition-colors"
+          style={{ letterSpacing: '0.05em' }}
+        >
+          Privacy Policy
+        </a>
+
         {user ? (
-          <>
-            <div className="flex h-[32px] w-[32px] items-center justify-center rounded-full bg-black-surface text-green">
-              {getInitials(user.displayName || user.email)}
+          <div className="flex items-center gap-4">
+            <div className="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center font-label font-bold text-xs text-primary">
+              {initials(user.displayName || user.email)}
             </div>
             <button
               onClick={() => signOut()}
-              className="text-[14px] text-white hover:text-green-light"
+              className="font-label text-sm font-bold tracking-widest text-on-surface hover:text-primary transition-colors"
             >
               SIGN OUT
             </button>
-          </>
+          </div>
         ) : (
-          <Link
-            to="/login"
-            className="text-[14px] text-white hover:text-green-light no-underline"
+          <button
+            onClick={() => signIn()}
+            className="bg-primary-container text-on-primary px-6 py-2 rounded-full font-label font-bold text-sm transition-all active:scale-95 hover:brightness-110"
           >
-            SIGN IN
-          </Link>
+            Sign In
+          </button>
         )}
       </div>
-    </nav>
+    </header>
   );
 };
