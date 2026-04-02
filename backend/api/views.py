@@ -1,17 +1,22 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status, permissions
+import logging
+import re
+import requests
+from datetime import datetime, timezone
+
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
-from .firestore_client import db
-from . import spotify_service        # kept for existing preview/score endpoints
-from . import spotify as spotify_new  # new module for M2 challenge endpoints
-from . import scoring
-from .serializers import PlaylistPreviewSerializer, ScoreSubmitSerializer
-from datetime import datetime, timezone
 from google.cloud.firestore_v1 import Increment
-import requests
-import re
+from rest_framework import permissions, status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from . import scoring
+from . import spotify as spotify_new  # new module for M2 challenge endpoints
+from . import spotify_service         # kept for existing preview/score endpoints
+from .firestore_client import db
+from .serializers import PlaylistPreviewSerializer, ScoreSubmitSerializer
+
+logger = logging.getLogger(__name__)
 
 
 class HealthCheckView(APIView):
@@ -262,22 +267,25 @@ class PlaylistFetchSongsView(APIView):
     def post(self, request):
         playlist_url = request.data.get('playlistUrl', '').strip()
         playlist_id = _parse_playlist_id(playlist_url)
+
+        logger.info('[fetch_songs] url=%r → extracted id=%r', playlist_url, playlist_id)
+
         if not playlist_id:
-            return Response({'error': 'Invalid playlist URL'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Invalid Spotify playlist URL'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             raw_tracks = spotify_new.get_playlist_tracks(playlist_id)
-        except Exception:
-            raw_tracks = [
-                {"title": "Never Gonna Give You Up"},
-                {"title": "Billie Jean"},
-                {"title": "Bohemian Rhapsody"},
-            ]
+        except ValueError as e:
+            logger.error('[fetch_songs] Spotify ValueError for id=%r: %s', playlist_id, e)
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error('[fetch_songs] Spotify unexpected error for id=%r: %s', playlist_id, e, exc_info=True)
+            return Response({'error': f'Spotify error: {e}'}, status=status.HTTP_502_BAD_GATEWAY)
 
         if not raw_tracks:
-            return Response({'error': 'No tracks'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'No tracks found in playlist'}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response([{'name': t.get('title')} for t in raw_tracks])
+        return Response({'songs': [t['title'] for t in raw_tracks]})
 
 @method_decorator(csrf_exempt, name='dispatch')
 class ChallengeListCreateView(APIView):
@@ -364,15 +372,11 @@ class ChallengeListCreateView(APIView):
         try:
             raw_tracks = spotify_new.get_playlist_tracks(playlist_id)
         except ValueError as e:
-            print(f"Spotify validation error: {e}")
-            raw_tracks = []
+            logger.error('[create challenge] Spotify ValueError for id=%r: %s', playlist_id, e)
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            print(f"Spotify unexpected error: {e}. Falling back to MOCK mode.")
-            raw_tracks = [
-                {"id": "demo-track-1", "title": "Never Gonna Give You Up", "artist": "Rick Astley", "preview_url": None},
-                {"id": "demo-track-2", "title": "Billie Jean", "artist": "Michael Jackson", "preview_url": None},
-                {"id": "demo-track-3", "title": "Bohemian Rhapsody", "artist": "Queen", "preview_url": None},
-            ]
+            logger.error('[create challenge] Spotify unexpected error for id=%r: %s', playlist_id, e, exc_info=True)
+            return Response({'error': f'Spotify error: {e}'}, status=status.HTTP_502_BAD_GATEWAY)
 
         if not raw_tracks:
             return Response({'error': 'No tracks found or playlist invalid.'}, status=status.HTTP_400_BAD_REQUEST)

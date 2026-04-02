@@ -39,6 +39,7 @@ export const CreateChallengePage: React.FC = () => {
 
   const handleFetch = async () => {
     setFetchError(null);
+    setFieldErrors({});
     const errors = validateUrl();
     setFieldErrors(errors);
     if (errors.url) return;
@@ -47,7 +48,7 @@ export const CreateChallengePage: React.FC = () => {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
       const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
       const response = await fetch(`${baseUrl}/api/challenges/fetch_songs/`, {
         method: 'POST',
@@ -57,19 +58,22 @@ export const CreateChallengePage: React.FC = () => {
       });
       clearTimeout(timeoutId);
 
-      if (!response.ok) throw new Error('API Request Failed');
+      // Always parse JSON so we can read the error field on non-2xx responses
       const data = await response.json();
-      setFetchedSongs(data);
-    } catch (err: unknown) {
-      setFetchedSongs([
-        { name: 'Never Gonna Give You Up' },
-        { name: 'Billie Jean' },
-        { name: 'Bohemian Rhapsody' },
-      ]);
-    }
+      if (!response.ok) {
+        throw new Error(data.error || `Server error ${response.status}`);
+      }
 
-    setHasFetched(true);
-    setIsFetching(false);
+      // Backend returns { songs: ['Title 1', 'Title 2', ...] }
+      const songs: string[] = Array.isArray(data.songs) ? data.songs : [];
+      setFetchedSongs(songs.map((name: string) => ({ name })));
+      setHasFetched(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to reach server';
+      setFetchError(msg);
+    } finally {
+      setIsFetching(false);
+    }
   };
 
   const validate = () => {

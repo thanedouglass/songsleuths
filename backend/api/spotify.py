@@ -2,9 +2,12 @@
 Spotify API utilities — for server-side use only.
 Credentials are read from environment variables and never exposed to the client.
 """
+import logging
 import os
 import time
 import requests
+
+logger = logging.getLogger(__name__)
 
 SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token'
 SPOTIFY_API_BASE = 'https://api.spotify.com/v1'
@@ -35,6 +38,11 @@ def get_spotify_token() -> str:
         headers={'Content-Type': 'application/x-www-form-urlencoded'},
         timeout=10,
     )
+    if not resp.ok:
+        logger.error(
+            '[Spotify token] %s %s — body: %s',
+            resp.status_code, resp.reason, resp.text,
+        )
     resp.raise_for_status()
     data = resp.json()
 
@@ -56,8 +64,16 @@ def get_playlist_tracks(playlist_id: str) -> list[dict]:
 
     while url and len(tracks) < MAX_TRACKS:
         resp = requests.get(url, headers=headers, timeout=10)
-        if resp.status_code in (403, 404):
-            raise ValueError('Playlist not found or is private')
+        if not resp.ok:
+            logger.error(
+                '[Spotify tracks] %s %s — playlist_id=%r url=%r — body: %s',
+                resp.status_code, resp.reason, playlist_id, url, resp.text,
+            )
+        if resp.status_code in (401, 403, 404):
+            raise ValueError(
+                f'Spotify returned {resp.status_code} for playlist {playlist_id!r}. '
+                f'Reason: {resp.reason}. Body: {resp.text}'
+            )
         resp.raise_for_status()
         data = resp.json()
 
