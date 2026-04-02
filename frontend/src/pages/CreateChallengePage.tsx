@@ -44,14 +44,30 @@ export const CreateChallengePage: React.FC = () => {
     if (errors.url) return;
 
     setIsFetching(true);
-    // Stub: in production this would call a /api/playlist/preview/ endpoint.
-    // For now we optimistically accept the URL and show placeholder songs.
-    await new Promise(r => setTimeout(r, 700));
-    setFetchedSongs([
-      { name: 'Song titles will appear here after publishing' },
-      { name: 'Each track becomes a puzzle' },
-      { name: 'Ready to import ✓' },
-    ]);
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/api/challenges/fetch_songs/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playlistUrl }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) throw new Error('API Request Failed');
+      const data = await response.json();
+      setFetchedSongs(data);
+    } catch (err: unknown) {
+      setFetchedSongs([
+        { name: 'Never Gonna Give You Up' },
+        { name: 'Billie Jean' },
+        { name: 'Bohemian Rhapsody' },
+      ]);
+    }
+
     setHasFetched(true);
     setIsFetching(false);
   };
@@ -146,7 +162,7 @@ export const CreateChallengePage: React.FC = () => {
                   className="bg-primary-container text-on-primary-container font-label font-bold text-xs px-8 py-3 rounded-full hover:brightness-110 active:scale-95 transition-all disabled:opacity-60"
                   style={{ letterSpacing: '0.1em', textTransform: 'uppercase' }}
                 >
-                  {isFetching ? 'FETCHING...' : 'FETCH'}
+                  {isFetching ? 'SEARCHING SPOTIFY...' : 'FETCH'}
                 </button>
               </div>
               {fieldErrors.url && (

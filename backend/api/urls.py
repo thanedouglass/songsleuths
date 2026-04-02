@@ -7,6 +7,7 @@ urlpatterns = [
 
     # Challenges — list/create + detail/delete
     path('challenges/',                                         views.ChallengeListCreateView.as_view()),
+    path('challenges/fetch_songs/',                             views.PlaylistFetchSongsView.as_view()),
     path('challenges/<str:pk>/',                                views.ChallengeDetailView.as_view()),
 
     # Gameplay endpoints (M3)
