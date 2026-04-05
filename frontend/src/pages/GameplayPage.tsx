@@ -232,31 +232,6 @@ export const GameplayPage: React.FC = () => {
     dispatch({ type: 'FILL_ANSWER', title: data.title, newStatus: 'revealed', newScore: 0 });
   }, [id, songIndex]);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const s = stateRef.current;
-
-      // Enter — open reveal modal when playing; confirm it when modal is already open
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (s.showRevealModal) handleRevealConfirm();
-        else if (s.status === 'playing') dispatch({ type: 'SHOW_MODAL', show: true });
-        return;
-      }
-
-      // Backspace — dismiss the reveal modal
-      if (e.key === 'Backspace') {
-        if (s.showRevealModal) dispatch({ type: 'SHOW_MODAL', show: false });
-        return;
-      }
-
-      if (s.status !== 'playing') return;
-      if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) handleGuess(e.key);
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [handleGuess, handleRevealConfirm]);
-
   const handleHint = async () => {
     if (hintUsed || hintPlaying) return;
     dispatch({ type: 'USE_HINT' });
@@ -286,6 +261,31 @@ export const GameplayPage: React.FC = () => {
       setHintPlaying(false);
     }
   };
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const s = stateRef.current;
+
+      // Enter — open reveal modal when playing; confirm it when modal is already open
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (s.showRevealModal) handleRevealConfirm();
+        else if (s.status === 'playing') dispatch({ type: 'SHOW_MODAL', show: true });
+        return;
+      }
+
+      // Backspace — dismiss the reveal modal
+      if (e.key === 'Backspace') {
+        if (s.showRevealModal) dispatch({ type: 'SHOW_MODAL', show: false });
+        return;
+      }
+
+      if (s.status !== 'playing') return;
+      if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) handleGuess(e.key);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleGuess, handleRevealConfirm]);
 
   // ─── Render helpers ────────────────────────────────────────────────────────
 

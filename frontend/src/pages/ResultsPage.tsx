@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { NavBar } from '../components/NavBar';
 import { submitChallengeScore } from '../lib/api';
@@ -26,8 +26,10 @@ export const ResultsPage: React.FC = () => {
   const { user } = useAuth();
 
   const songResults: SongResult[] = (location.state as any)?.songResults ?? [];
-  const startTime: number = (location.state as any)?.startTime ?? Date.now();
-  const completionTimeMs = Date.now() - startTime;
+  const { completionTimeMs } = useMemo(() => {
+    const start = (location.state as any)?.startTime ?? Date.now();
+    return { completionTimeMs: Date.now() - start };
+  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalScore = songResults.reduce((sum, r) => sum + r.score, 0);
   const solvedCount = songResults.filter(r => r.status === 'won').length;
