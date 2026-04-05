@@ -173,7 +173,9 @@ export const CreateChallengePage: React.FC = () => {
                 <p className="font-body text-sm text-error italic">{fieldErrors.url}</p>
               )}
               {fetchError && (
-                <p className="font-body text-sm text-error italic">{fetchError}</p>
+                <p className={`font-body text-sm italic ${fetchError.startsWith('Note:') ? 'text-amber-400' : 'text-error'}`}>
+                  {fetchError}
+                </p>
               )}
             </div>
           </section>

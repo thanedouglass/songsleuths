@@ -59,10 +59,11 @@ def get_playlist_tracks(playlist_id: str) -> list[dict]:
     """
     token = get_spotify_token()
     headers = {'Authorization': f'Bearer {token}'}
-    url = f'{SPOTIFY_API_BASE}/playlists/{playlist_id}/tracks'
+    url = f'{SPOTIFY_API_BASE}/playlists/{playlist_id}/items?market=US'
     tracks = []
 
     while url and len(tracks) < MAX_TRACKS:
+        logger.debug('[Spotify] GET %s', url)
         resp = requests.get(url, headers=headers, timeout=10)
         if not resp.ok:
             logger.error(
@@ -70,15 +71,13 @@ def get_playlist_tracks(playlist_id: str) -> list[dict]:
                 resp.status_code, resp.reason, playlist_id, url, resp.text,
             )
         if resp.status_code in (401, 403, 404):
-            raise ValueError(
-                f'Spotify returned {resp.status_code} for playlist {playlist_id!r}. '
-                f'Reason: {resp.reason}. Body: {resp.text}'
-            )
+            raise ValueError('This playlist is private. Only public Spotify playlists are supported.')
         resp.raise_for_status()
         data = resp.json()
 
         for item in data.get('items', []):
-            track = item.get('track')
+            # Try new field name first, fall back to legacy 'track' field
+            track = item.get('item') or item.get('track')
             if not track or not track.get('id'):
                 continue
             tracks.append({
@@ -91,5 +90,11 @@ def get_playlist_tracks(playlist_id: str) -> list[dict]:
                 break
 
         url = data.get('next')
+
+    if not tracks:
+        raise ValueError(
+            'Note: Due to Spotify API restrictions, you can only fetch tracks '
+            'from playlists owned by this developer account.'
+        )
 
     return tracks

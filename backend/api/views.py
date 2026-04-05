@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from google.cloud.firestore_v1 import Increment
+from google.cloud.firestore_v1.base_query import FieldFilter
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -176,7 +177,7 @@ class ChallengeScoreView(APIView):
             # Calculate rank after write
             all_scores = (
                 db.collection('scores')
-                .where('challengeId', '==', pk)
+                .where(filter=FieldFilter('challengeId', '==', pk))
                 .order_by('totalScore', direction='DESCENDING')
                 .order_by('completionTimeMs', direction='ASCENDING')
                 .stream()
@@ -232,7 +233,7 @@ class ChallengeLeaderboardView(APIView):
         try:
             docs = (
                 db.collection('scores')
-                .where('challengeId', '==', pk)
+                .where(filter=FieldFilter('challengeId', '==', pk))
                 .order_by('totalScore', direction='DESCENDING')
                 .order_by('completionTimeMs', direction='ASCENDING')
                 .limit(10)
@@ -302,7 +303,7 @@ class ChallengeListCreateView(APIView):
             try:
                 docs = (
                     db.collection('challenges')
-                    .where('creatorUid', '==', request.user)
+                    .where(filter=FieldFilter('creatorUid', '==', request.user))
                     .order_by('createdAt', direction='DESCENDING')
                     .stream()
                 )
@@ -325,7 +326,7 @@ class ChallengeListCreateView(APIView):
             try:
                 docs = (
                     db.collection('challenges')
-                    .where('visibility', '==', 'public')
+                    .where(filter=FieldFilter('visibility', '==', 'public'))
                     .order_by('createdAt', direction='DESCENDING')
                     .limit(20)
                     .stream()
@@ -369,11 +370,15 @@ class ChallengeListCreateView(APIView):
             print(f"Challenge validation failed: Invalid playlist URL ({playlist_url})")
             return Response({'error': 'Invalid playlist URL'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Only public playlists are supported (Client Credentials flow)
         try:
             raw_tracks = spotify_new.get_playlist_tracks(playlist_id)
         except ValueError as e:
             logger.error('[create challenge] Spotify ValueError for id=%r: %s', playlist_id, e)
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': 'This playlist is private or unavailable. Please use a public Spotify playlist URL.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except Exception as e:
             logger.error('[create challenge] Spotify unexpected error for id=%r: %s', playlist_id, e, exc_info=True)
             return Response({'error': f'Spotify error: {e}'}, status=status.HTTP_502_BAD_GATEWAY)
@@ -466,7 +471,7 @@ class ExploreView(APIView):
         try:
             docs = (
                 db.collection('challenges')
-                .where('visibility', '==', 'public')
+                .where(filter=FieldFilter('visibility', '==', 'public'))
                 .order_by('playCount', direction='DESCENDING')
                 .order_by('createdAt', direction='DESCENDING')
                 .limit(20)
@@ -586,7 +591,7 @@ class LeaderboardView(APIView):
         try:
             docs = (
                 db.collection('scores')
-                .where('challenge_id', '==', challenge_id)
+                .where(filter=FieldFilter('challenge_id', '==', challenge_id))
                 .order_by('total_score', direction='DESCENDING')
                 .order_by('completion_time_seconds', direction='ASCENDING')
                 .limit(50)
